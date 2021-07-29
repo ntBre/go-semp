@@ -76,7 +76,16 @@ DERIVED_PARAMS = ['PQN', 'NValence', 'DDN', 'KON', 'EISol']
 # based on that, h should be the cube root of machine epsilon, which
 # the article puts around 2.2e-16 for doubles = 6e-6
 
-# I think I had the rows and columns backwards last time
+# now the difference between gradient descent and levmar is that
+# instead of solving the equation
+
+# (Jt*J)d = Jt*[y - f(B)]
+
+# for d and adding that to B, you just do
+
+# B' = -g * Jt * f(B)
+
+# where g is gamma or the step size, I think
 
 
 def load_params(filename):
