@@ -182,6 +182,17 @@ def load_file07(filename: str):
         geoms.append(buf)
     return geoms
 
+
+def load_energies(filename: str) -> np.array:
+    """load relative ab initio energies from filename"""
+    ret = []
+    with open(filename, 'r') as inp:
+        for line in inp:
+            ret.append(float(line))
+    return np.array(ret, dtype=np.float64)
+
+
 B0 = load_params("opt.out")
 dump_params(B0, "test.out")
 g = load_file07('file07')
+e = load_energies('rel.dat')
