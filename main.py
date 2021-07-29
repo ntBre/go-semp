@@ -1,3 +1,7 @@
+from dataclasses import dataclass
+import numpy as np
+import io
+
 # parameters to skip optimizing because they are either constants or
 # derived from other parameters
 DERIVED_PARAMS = ['PQN', 'NValence', 'DDN', 'KON', 'EISol']
@@ -9,6 +13,16 @@ DERIVED_PARAMS = ['PQN', 'NValence', 'DDN', 'KON', 'EISol']
 # into matrices, so two parallel lists with params and the
 # corresponding value in the same positions would be ideal, but this
 # complicates parsing since some of the values have multiple values
+
+@dataclass
+class Atom:
+    labl: str
+    keys: list[str]
+    vals: list[float]
+
+    def values(self) -> np.ndarray:
+        return np.array(self.vals, dtype=np.float64)
+        
 
 # just keep duplicating the key !! ex:
 # [... Beta Beta Beta Beta ...]
@@ -88,32 +102,86 @@ DERIVED_PARAMS = ['PQN', 'NValence', 'DDN', 'KON', 'EISol']
 # where g is gamma or the step size, I think
 
 
-def load_params(filename):
+def load_params(filename: str) -> list[Atom]:
+    """load semi-empirical parameters from the Gaussian output file
+    named by filename and return them as a list of Atoms"""
     atom_label = False
     atom_param = False
     atom = ""
-    atoms = {}
+    atoms = []
+    a = -1
     with open(filename, 'r') as f:
         for line in f:
-            if "parameters" in line:
-                print(line, end='')
-            elif line == " ****\n":
+            if line == " ****\n":
                 atom_label = True
             elif atom_label and line == " \n":
                 atom_label = False
                 atom_param = False
             elif atom_label:
                 atom = str(line.split()[0])
-                atoms[atom] = {}
+                atoms.append(Atom(labl=atom, keys=[], vals=[]))
                 atom_label = False
                 atom_param = True
+                a += 1
             elif atom_param:
                 params = line.split()
                 for p in params:
                     p, v = p.split('=')
                     if p not in DERIVED_PARAMS:
-                        atoms[atom][p] = v
+                        fields = v.split(',')
+                        if p == 'DCore':
+                            p += '=' + ','.join(fields[0:2])
+                            fields = fields[2:]
+                        for f in fields:
+                            atoms[a].keys.append(p)
+                            atoms[a].vals.append(f)
     return atoms
 
 
-print(load_params("opt.out"))
+def format_params(atoms: list[Atom]) -> str:
+    """format semi-empirical parameters of atoms for writing"""
+    ret = io.StringIO()
+    for atom in atoms:
+        ret.write(f"{atom.labl}\n")
+        last = None
+        for i, k in enumerate(atom.keys):
+            if k != last:
+                if i > 0:
+                    ret.write("\n")
+                if 'DCore' not in k:
+                    ret.write(f"{k}={atom.vals[i]}")
+                else:
+                    ret.write(f"{k},{atom.vals[i]}")
+                last = k
+            else:
+                ret.write(f",{atom.vals[i]}")
+        ret.write("\n****\n")
+    return ret.getvalue()
+
+
+# TODO make this write a real gaussian input file, so it's going to
+# need more args
+def dump_params(atoms: list[Atom], filename: str):
+    """dump semi-empirical parameters to filename"""
+    with open(filename, 'w') as out:
+        out.write(format_params(atoms))
+
+
+def load_file07(filename: str):
+    """load a list of structures from file07"""
+    geoms = []
+    with open(filename, 'r') as inp:
+        buf = []
+        for line in inp:
+            if '#' not in line:
+                fields = line.split()
+                buf.extend([float(x) for x in fields])
+            elif len(buf) > 0:
+                geoms.append(buf)
+                buf = []
+        geoms.append(buf)
+    return geoms
+
+B0 = load_params("opt.out")
+dump_params(B0, "test.out")
+g = load_file07('file07')
