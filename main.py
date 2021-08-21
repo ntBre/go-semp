@@ -1,14 +1,29 @@
+# dig at levmar
+# https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization
+
+# optimize step size in gradient descent
+# https://en.wikipedia.org/wiki/Line_search
+
+# gradient descent itself
+# https://en.wikipedia.org/wiki/Gradient_descent
+
 from dataclasses import dataclass
 import numpy as np
 import io
 import os
 
 # parameters to skip optimizing because they are either constants or
-# derived from other parameters
-DERIVED_PARAMS = ['PQN', 'NValence', 'DDN', 'KON', 'EISol']
+# derived from other parameters. Gaussian verified to run without
+# these
+DERIVED_PARAMS = ["PQN", "NValence", "DDN", "KON", "EISol"]
+
+# this says step size should be cube root of machine eps, and that
+# machine eps is around 2.2e16, giving 6e-6 for the step
+# https://en.wikipedia.org/wiki/Numerical_differentiation
+STEP_SIZE = 6e-6
+
 CHARGE = 0
 SPIN = 1
-
 
 @dataclass
 class Atom:
@@ -18,7 +33,6 @@ class Atom:
 
     def values(self) -> np.ndarray:
         return np.array(self.vals, dtype=np.float64)
-
 
 # just keep duplicating the key !! ex:
 # [... Beta Beta Beta Beta ...]
@@ -70,7 +84,7 @@ class Atom:
 # nstruct x nparam in Jt so Jt*J is
 # nstruct x nstruct and y and f(B) are nstruct x 1
 
-# that doesn't work! that's how I got to the transposed form last
+# that doesn"t work! that"s how I got to the transposed form last
 # time! Jt is nstruct x nparam and you have to multiply by nstruct x 1
 # to get an nparam x
 
@@ -80,12 +94,6 @@ class Atom:
 # is n x m, giving nxn in the product and now y is m x 1 or nstruct x
 # 1 as expected
 
-# see this for ideas about step size in qffs and here
-# https://en.wikipedia.org/wiki/Numerical_differentiation
-
-# based on that, h should be the cube root of machine epsilon, which
-# the article puts around 2.2e-16 for doubles = 6e-6
-
 # now the difference between gradient descent and levmar is that
 # instead of solving the equation
 
@@ -93,10 +101,9 @@ class Atom:
 
 # for d and adding that to B, you just do
 
-# B' = -g * Jt * f(B)
+# B" = -g * Jt * f(B)
 
 # where g is gamma or the step size, I think
-
 
 def load_params(filename: str) -> list[Atom]:
     """load semi-empirical parameters from the Gaussian output file
@@ -106,7 +113,7 @@ def load_params(filename: str) -> list[Atom]:
     atom = ""
     atoms = []
     a = -1
-    with open(filename, 'r') as f:
+    with open(filename, "r") as f:
         for line in f:
             if line == " ****\n":
                 atom_label = True
@@ -122,11 +129,11 @@ def load_params(filename: str) -> list[Atom]:
             elif atom_param:
                 params = line.split()
                 for p in params:
-                    p, v = p.split('=')
+                    p, v = p.split("=")
                     if p not in DERIVED_PARAMS:
-                        fields = v.split(',')
-                        if p == 'DCore':
-                            p += '=' + ','.join(fields[0:2])
+                        fields = v.split(",")
+                        if p == "DCore":
+                            p += "=" + ",".join(fields[0:2])
                             fields = fields[2:]
                         for f in fields:
                             atoms[a].keys.append(p)
@@ -144,7 +151,7 @@ def format_params(atoms: list[Atom]) -> str:
             if k != last:
                 if i > 0:
                     ret.write("\n")
-                if 'DCore' not in k:
+                if "DCore" not in k:
                     ret.write(f"{k}={atom.vals[i]}")
                 else:
                     ret.write(f"{k},{atom.vals[i]}")
@@ -155,6 +162,8 @@ def format_params(atoms: list[Atom]) -> str:
     return ret.getvalue()
 
 
+# TODO make this write a real gaussian input file, so it"s going to
+# need more args
 def dump_params(atoms: list[Atom], filename: str):
     """dump semi-empirical parameters to filename in the format expected
     by Gaussian
@@ -167,10 +176,10 @@ def dump_params(atoms: list[Atom], filename: str):
 def load_file07(filename: str):
     """load a list of structures from file07"""
     geoms = []
-    with open(filename, 'r') as inp:
+    with open(filename, "r") as inp:
         buf = []
         for line in inp:
-            if '#' not in line:
+            if "#" not in line:
                 fields = line.split()
                 buf.extend([float(x) for x in fields])
             elif len(buf) > 0:
@@ -183,11 +192,10 @@ def load_file07(filename: str):
 def load_energies(filename: str) -> np.array:
     """load relative ab initio energies from filename"""
     ret = []
-    with open(filename, 'r') as inp:
+    with open(filename, "r") as inp:
         for line in inp:
             ret.append(float(line))
     return np.array(ret, dtype=np.float64)
-
 
 def zip_geom(atoms: list[str], cords: list[float]) -> str:
     """combine a list of atom names with a list of coordinates"""
