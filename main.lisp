@@ -1,6 +1,9 @@
-;; maybe this should be a hash so it's easier to check membership?
-(defparameter *derived_params*
-  (list "PQN" "NValence" "DDN" "KON" "EISol"))
+(in-package :cl-user)
+
+(defpackage :com.bwestbro.semp
+  (:use :cl :uiop))
+
+(in-package :com.bwestbro.semp)
 
 (defparameter *charge* 0)
 
@@ -9,9 +12,33 @@
 (defclass atom-type ()
   ((label :initarg :label
 	  :accessor label)
-   (params :initarg :params
-	   :accessor params
-	   :initform ())))
+   (param-names :initarg :param-names
+		:accessor :param-names
+		:initform ())
+   (param-values :initarg :param-values
+		:accessor :param-values
+		:initform ())))
+
+(defgeneric push-names (atom-type name-list))
+
+(defmethod push-names ((atom atom-type) name-list)
+  (with-slots (param-names) atom
+    (setf param-names (append param-names name-list))))
+
+(defmethod push-values ((atom atom-type) value-list)
+  (with-slots (param-values) atom
+    (setf param-values (append param-values value-list))))
+
+(defmethod print-object ((atom atom-type) stream)
+  (print-unreadable-object (atom stream :type t)
+    (with-slots (label param-names param-values) atom
+      (loop for name in param-names
+	    for value in param-values
+	    do (format t "~a: ~a=~a~%" label name value)))))
+
+(defun string->float (num)
+  (let ((*read-default-float-format* 'double-float))
+    (read-from-string num)))
 
 (defun load-params (filename)
   (let ((in-labl nil)
@@ -31,27 +58,41 @@
 				       (read-from-string line)) atoms)
 		  (setf in-labl nil
 			in-params t))
-		 (in-params (print line)))))
-    atoms))
+		 (in-params
+		  (multiple-value-bind (names values) (parse-params line)
+		    (push-names (car atoms) names)
+		    (push-values (car atoms) (mapcar #'string->float values)))))))
+    (nreverse atoms)))
 
 (defun derived-param-p (param)
   (member (car (uiop:split-string param :separator '(#\=)))
-	  *derived_params* :test #'string-equal))
+	  (list "PQN" "NValence" "DDN" "KON" "EISol")
+	  :test #'string-equal))
 
+;; when dumping params dont print a new one if the name is the same as
+;; the last, just put a comma
 (defun parse-params (line)
-  (let ((fields (remove-if #'derived-param-p (fields line))))
-    fields))
+  (let ((fields (remove-if #'derived-param-p (fields line)))
+	names values)
+    (dolist (f fields)
+      (destructuring-bind (name value) 
+	  (uiop:split-string f :separator '(#\=))
+	(when (string= name "DCore")
+	  (let ((fields (uiop:split-string value :separator '(#\,))))
+	    (setf name (strcat name "=" (pop fields) "," (pop fields)))
+	    (setf value (join fields ","))))
+	(loop for f in (uiop:split-string value :separator '(#\,))
+	      do (push name names)
+		 (push f values))))
+    (values (nreverse names) (nreverse values))))
 
 (defparameter *mystr*
-  " PQN=2,2,0,0 NValence=4 F0ss=0.4900713060 F0sp=0.4236511293 F0pp=0.3644399818")
+  "DCore=2,3,1.6101301456,3.2139710000,0.0000000000,0.0000000000,0.0000000000")
+  ;; " PQN=2,2,0,0 NValence=4 F0ss=0.4900713060 F0sp=0.4236511293 F0pp=0.3644399818")
 
 (defun new-char-array ()
   (make-array 1 :fill-pointer 0 :adjustable t :element-type 'character))
 
-;; TODO split on something other than whitespace
-;; nvm TODO use cl-ppcre, which has a split function
-;; nvm nvm use uiop:split-string
-;; nvm nvm nvm use this for splitting into fields, and then use uiop for splitting on commas
 (defun fields (str)
   "split str on whitespace"
   (flet ((whitespace-p (c)
@@ -69,3 +110,12 @@
 	      do (vector-push-extend c cur)
 	    end)
       (nreverse ret))))
+
+(defun join (strs &optional (sep " "))
+  "join the elements of STRS by SEP"
+  (apply #'strcat
+	 (loop for length = (1- (length strs))
+	       for s in strs
+	       for i = 0 then (1+ i)
+	       collect s
+	       when (< i length) collect sep)))
