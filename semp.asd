@@ -2,5 +2,5 @@
   :description "package for reparameterizing semi-empirical methods in Gaussian16"
   :version "0.1"
   :author "Brent R. Westbrook <brentrwestbrook@gmail.com"
-  :components ((:file "main"))
-  :depends-on ("asdf" "uiop"))
+  :components ((:file "semp"))
+  :depends-on (:strings))

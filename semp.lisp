@@ -36,10 +36,6 @@
 	    for value in param-values
 	    do (format t "~a: ~a=~a~%" label name value)))))
 
-(defun string->float (num)
-  (let ((*read-default-float-format* 'double-float))
-    (read-from-string num)))
-
 (defun load-params (filename)
   (let ((in-labl nil)
 	(in-params nil)
