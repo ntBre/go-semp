@@ -90,32 +90,4 @@
   "DCore=2,3,1.6101301456,3.2139710000,0.0000000000,0.0000000000,0.0000000000")
   ;; " PQN=2,2,0,0 NValence=4 F0ss=0.4900713060 F0sp=0.4236511293 F0pp=0.3644399818")
 
-(defun new-char-array ()
-  (make-array 1 :fill-pointer 0 :adjustable t :element-type 'character))
 
-(defun fields (str)
-  "split str on whitespace"
-  (flet ((whitespace-p (c)
-	   (member c (list #\Newline #\Space #\Tab))))
-    (let ((len (1- (length str)))
-	  (ret ())
-	  (cur (new-char-array)))
-      (loop for idx = 0 then (1+ idx)
-	    for c across str
-	    if (or (whitespace-p c) (= idx len))
-	      do (when (> (length cur) 0)
-		   (push (coerce cur 'string) ret)
-		   (setf cur (new-char-array)))
-	    else
-	      do (vector-push-extend c cur)
-	    end)
-      (nreverse ret))))
-
-(defun join (strs &optional (sep " "))
-  "join the elements of STRS by SEP"
-  (apply #'strcat
-	 (loop for length = (1- (length strs))
-	       for s in strs
-	       for i = 0 then (1+ i)
-	       collect s
-	       when (< i length) collect sep)))
