@@ -5,8 +5,8 @@
 
 (in-package :com.bwestbro.semp)
 
+;; TODO way to change these - probably read input file
 (defparameter *charge* 0)
-
 (defparameter *spin* 1)
 
 (defclass atom-type ()
@@ -92,9 +92,79 @@ list of ATOM-TYPEs"
     (nreverse atoms)))
 
 (defun dump-params (atoms &optional (filename "params.dat"))
-  (with-open-file (outfile filename :direction :output :if-exists :supersede)
+  "Dump the parameters for ATOMS to FILENAME"
+  (with-open-outfile filename
     (mapcar #'(lambda (a) (print-atom a outfile)) atoms))
   t)
+
+(defmacro with-open-outfile (filename &body body)
+    `(with-open-file (outfile ,filename :direction :output :if-exists :supersede)
+       ,@body))
+
+(defun write-com (filename geom &optional (param-file "params.dat"))
+  (with-open-outfile filename
+    ;; TODO should be able to adjust memory as well
+    (format outfile "%mem=1000mb
+%nprocs=1
+#P PM6=(print,zero)
+
+the title
+
+~a ~a
+~a
+
+@~a
+" *charge* *spin* geom param-file))
+  t)
+
+(defun write-pbs (filename)
+  (with-open-outfile filename
+    (format outfile "#!/bin/sh
+#PBS -N sempirical
+#PBS -S /bin/bash
+#PBS -j oe
+#PBS -m abe
+#PBS -l mem=1gb
+#PBS -l nodes=1:ppn=1
+
+scrdir=/tmp/$USER.$PBS_JOBID
+
+mkdir -p $scrdir
+export GAUSS_SCRDIR=$scrdir
+export OMP_NUM_THREADS=1
+
+echo \"exec_host = $HOSTNAME\"
+
+if [[ $HOSTNAME =~~ cn([0-9]{{3}}) ]];
+then
+  nodenum=${{BASH_REMATCH[1]}};
+  nodenum=$((10#$nodenum));
+  echo $nodenum
+
+  if (( $nodenum <= 29 ))
+  then
+    echo \"Using AVX version\";
+    export g16root=/usr/local/apps/gaussian/g16-c01-avx/
+  elif (( $nodenum > 29 ))
+  then
+    echo \"Using AVX2 version\";
+    export g16root=/usr/local/apps/gaussian/g16-c01-avx2/
+  else
+    echo \"Unexpected condition!\"
+    exit 1;
+  fi
+else
+  echo \"Not on a compute node!\"
+  exit 1;
+fi
+
+cd $PBS_O_WORKDIR
+. $g16root/g16/bsd/g16.profile
+g16 {comfile} {outfile}
+
+rm -r $scrdir
+
+")) t)
 
 (defun main ()
   (let ((atoms (load-params "opt.out")))
