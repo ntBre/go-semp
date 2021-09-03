@@ -1,7 +1,7 @@
 (in-package :cl-user)
 
 (defpackage :com.bwestbro.semp
-  (:use :cl :uiop))
+  (:use :cl :cl-user :uiop :com.bwestbro.strings))
 
 (in-package :com.bwestbro.semp)
 
@@ -29,45 +29,27 @@
   (with-slots (param-values) atom
     (setf param-values (append param-values value-list))))
 
-(defmethod print-object ((atom atom-type) stream)
-  (print-unreadable-object (atom stream :type t)
-    (with-slots (label param-names param-values) atom
-      (loop for name in param-names
-	    for value in param-values
-	    do (format t "~a: ~a=~a~%" label name value)))))
-
-(defun load-params (filename)
-  (let ((in-labl nil)
-	(in-params nil)
-	(atoms ()))
-    (with-open-file (infile filename :direction :input)
-      (loop for line = (read-line infile nil nil)
-	    while line
-	    do (cond
-		 ((string-equal line " ****")
-		  (setf in-labl t))
-		 ((and in-labl (string-equal line " "))
-		  (setf in-labl nil
-			in-params nil))
-		 (in-labl
-		  (push (make-instance 'atom-type :label
-				       (read-from-string line)) atoms)
-		  (setf in-labl nil
-			in-params t))
-		 (in-params
-		  (multiple-value-bind (names values) (parse-params line)
-		    (push-names (car atoms) names)
-		    (push-values (car atoms) (mapcar #'string->float values)))))))
-    (nreverse atoms)))
+(defun print-atom (atom &optional (stream t))
+  (with-slots (label param-names param-values) atom
+    (format stream "~& ****~%~2@a~%" label)
+    (loop for name in param-names
+	  for value in param-values
+	  with last = ""
+	  do
+	     (if (string= name last)
+		 (format stream ",~a" value)
+		 (format stream "~&~a~a~a" name
+			 (if (contains name "DCore") "," "=") value))
+	     (setf last name))))
 
 (defun derived-param-p (param)
+  "Check if a parameter is derived from other parameters"
   (member (car (uiop:split-string param :separator '(#\=)))
 	  (list "PQN" "NValence" "DDN" "KON" "EISol")
 	  :test #'string-equal))
 
-;; when dumping params dont print a new one if the name is the same as
-;; the last, just put a comma
 (defun parse-params (line)
+  "Parse a line of semi-empirical parameters"
   (let ((fields (remove-if #'derived-param-p (fields line)))
 	names values)
     (dolist (f fields)
@@ -82,8 +64,39 @@
 		 (push f values))))
     (values (nreverse names) (nreverse values))))
 
-(defparameter *mystr*
-  "DCore=2,3,1.6101301456,3.2139710000,0.0000000000,0.0000000000,0.0000000000")
-  ;; " PQN=2,2,0,0 NValence=4 F0ss=0.4900713060 F0sp=0.4236511293 F0pp=0.3644399818")
+(defun load-params (filename)
+  "Load semi-empirical parameters from FILENAME, returning them as a
+list of ATOM-TYPEs"
+  (let ((in-labl nil)
+	(in-params nil)
+	(atoms ()))
+    (with-open-file (infile filename :direction :input)
+      (loop for line = (read-line infile nil nil)
+	    while line
+	    do (cond
+		 ((string-equal line " ****")
+		  (setf in-labl t))
+		 ((and in-labl (string-equal line " "))
+		  (setf in-labl nil
+			in-params nil))
+		 (in-labl
+		  (push (make-instance 'atom-type :label
+				       (read-from-string line))
+			atoms)
+		  (setf in-labl nil
+			in-params t))
+		 (in-params
+		  (multiple-value-bind (names values) (parse-params line)
+		    (push-names (car atoms) names)
+		    (push-values (car atoms) (mapcar #'parse-float values)))))))
+    (nreverse atoms)))
 
+(defun dump-params (atoms &optional (filename "params.dat"))
+  (with-open-file (outfile filename :direction :output :if-exists :supersede)
+    (mapcar #'(lambda (a) (print-atom a outfile)) atoms))
+  t)
 
+(defun main ()
+  (let ((atoms (load-params "opt.out")))
+    (dump-params atoms)))
+  
