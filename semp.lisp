@@ -166,6 +166,8 @@ rm -r $scrdir
 
 ")) t)
 
+;; TODO load energies from rel.dat
+;; TODO load geometries from file07
 (defun main ()
   (let ((atoms (load-params "opt.out")))
     (dump-params atoms)))
