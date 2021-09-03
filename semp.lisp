@@ -8,6 +8,7 @@
 ;; TODO way to change these - probably read input file
 (defparameter *charge* 0)
 (defparameter *spin* 1)
+(defparameter *memory* 1000)
 
 (defclass atom-type ()
   ((label :initarg :label
@@ -103,8 +104,7 @@ list of ATOM-TYPEs"
 
 (defun write-com (filename geom &optional (param-file "params.dat"))
   (with-open-outfile filename
-    ;; TODO should be able to adjust memory as well
-    (format outfile "%mem=1000mb
+    (format outfile "%mem=~amb
 %nprocs=1
 #P PM6=(print,zero)
 
@@ -114,7 +114,7 @@ the title
 ~a
 
 @~a
-" *charge* *spin* geom param-file))
+" *memory* *charge* *spin* geom param-file))
   t)
 
 (defun write-pbs (filename)
