@@ -166,9 +166,36 @@ rm -r $scrdir
 
 ")) t)
 
+(defmacro dolines (filename line-var &body body)
+  (let ((infile (gensym)))
+    `(with-open-file (,infile ,filename :direction :input)
+       (loop for ,line-var = (read-line ,infile nil nil)
+	     ,@body))))
+
+(defun new-vector (&key (element-type t))
+  (make-array 1 :adjustable t
+		:fill-pointer 0
+		:element-type element-type))
+
+(defun load07 (&optional (filename "file07"))
+  "Load geometries from file07, return them as a vector of vectors"
+  (let ((ret (new-vector))
+	(buf (new-vector :element-type 'float)))
+    (dolines filename line
+      for i = 0 then (1+ i)
+      while line
+      if (and (> i 0) (contains line "#"))
+      do (vector-push-extend buf ret)
+      (setf buf (new-vector :element-type 'float))
+      else if (> i 0)
+      do (mapcar #'(lambda (x)
+		     (vector-push-extend x buf))
+		 (mapcar #'parse-float (fields line))))
+    (vector-push-extend buf ret)
+    ret))
+
 ;; TODO load energies from rel.dat
-;; TODO load geometries from file07
 (defun main ()
-  (let ((atoms (load-params "opt.out")))
+  (let ((atoms (load-params "opt.out"))
+	(geoms (load07)))
     (dump-params atoms)))
-  
