@@ -1,8 +1,9 @@
 * DONE load geometries
 * DONE load rel.dat
 * DONE load params
-* TODO dump params
-* TODO write gaussian files
+* DONE dump params
+* DONE write a gaussian file
+* TODO write all the gaussian files needed for a step
 * TODO call gaussian directly, run this on a node
   - eventually request multiple cpus and run in parallel
 * TODO assemble Jacobian matrix from repeated calls to gaussian
