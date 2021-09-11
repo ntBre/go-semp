@@ -1,0 +1,17 @@
+* DONE load geometries
+* DONE load rel.dat
+* WAIT acquire atom labels
+  - hard-code for now, load from somewhere later
+  - probably from params file
+  - or read an input file directly and run the initial params run for
+    the user
+* TODO load params
+* TODO dump params
+* TODO write gaussian files
+* TODO call gaussian directly, run this on a node
+  - eventually request multiple cpus and run in parallel
+* TODO assemble Jacobian matrix from repeated calls to gaussian
+  - might start with forward differences
+* TODO matrix math to get new params
+  - use gonum, permissive license confirmed
+* TODO repeat

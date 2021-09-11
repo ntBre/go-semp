@@ -92,15 +92,18 @@ list of ATOM-TYPEs"
 		    (push-values (car atoms) (mapcar #'parse-float values)))))))
     (nreverse atoms)))
 
-(defun dump-params (atoms &optional (filename "params.dat"))
-  "Dump the parameters for ATOMS to FILENAME"
-  (with-open-outfile filename
-    (mapcar #'(lambda (a) (print-atom a outfile)) atoms))
-  t)
-
 (defmacro with-open-outfile (filename &body body)
     `(with-open-file (outfile ,filename :direction :output :if-exists :supersede)
        ,@body))
+
+(defun dump-params (atoms &optional (filename "params.dat"))
+  "Dump the parameters for ATOMS to FILENAME. If filename is t, print to
+stdout"
+  (if (equal filename t)
+    (mapcar #'(lambda (a) (print-atom a)) atoms)
+    (with-open-outfile filename
+      (mapcar #'(lambda (a) (print-atom a outfile)) atoms)))
+    t)
 
 (defun write-com (filename geom &optional (param-file "params.dat"))
   (with-open-outfile filename
@@ -117,9 +120,14 @@ the title
 " *memory* *charge* *spin* geom param-file))
   t)
 
-(defun write-pbs (filename)
-  (with-open-outfile filename
-    (format outfile "#!/bin/sh
+(defun strip-suffix (filename)
+  (subseq filename 0
+	  (position #\. filename :from-end t)))
+
+(defun write-pbs (filename comfile)
+  (let ((outfile (concatenate 'string (strip-suffix comfile) ".out")))
+    (with-open-outfile filename
+      (format outfile "#!/bin/sh
 #PBS -N sempirical
 #PBS -S /bin/bash
 #PBS -j oe
@@ -160,16 +168,17 @@ fi
 
 cd $PBS_O_WORKDIR
 . $g16root/g16/bsd/g16.profile
-g16 {comfile} {outfile}
+g16 ~a ~a
 
 rm -r $scrdir
 
-")) t)
+" comfile outfile)) t))
 
 (defmacro dolines (filename line-var &body body)
   (let ((infile (gensym)))
     `(with-open-file (,infile ,filename :direction :input)
        (loop for ,line-var = (read-line ,infile nil nil)
+	     while line
 	     ,@body))))
 
 (defun new-vector (&key (element-type t))
@@ -183,7 +192,6 @@ rm -r $scrdir
 	(buf (new-vector :element-type 'float)))
     (dolines filename line
       for i = 0 then (1+ i)
-      while line
       if (and (> i 0) (contains line "#"))
       do (vector-push-extend buf ret)
       (setf buf (new-vector :element-type 'float))
@@ -194,8 +202,25 @@ rm -r $scrdir
     (vector-push-extend buf ret)
     ret))
 
-;; TODO load energies from rel.dat
+(defun load-rel (&optional (filename "rel.dat"))
+  "Load relative ab initio energies file"
+  (dolines filename line
+    collect (parse-float line)))
+
+(defun mindex (seq)
+  "Return the index of the minimum value in seq"
+  (let ((min (first seq))
+	(id 0))
+    (loop for s in seq
+	  for i = 0 then (1+ i)
+	  do (when (< s min) (setf min s) (setf id i)))
+    (values id min)))
+
+;; TODO get atom labels from somewhere to pair with geoms
 (defun main ()
   (let ((atoms (load-params "opt.out"))
-	(geoms (load07)))
-    (dump-params atoms)))
+	(geoms (load07))
+	(energies (load-rel)))
+    ;; loop over geoms, write pbs and com files - decide how to group pbs jobs
+    ;; - actually dont need pbs files, going to run gaussian directly on a node
+    (dump-params atoms t)))
