@@ -139,10 +139,35 @@ func LoadParams(filename string) (ret []Param) {
 	return
 }
 
+func DumpParams(params []Param, filename string) {
+	for _, param := range params {
+		fmt.Printf(" ****\n%2s", param.Atom)
+		var last, sep string
+		for i, name := range param.Names {
+			if strings.Contains(name, "DCore") {
+				sep = ","
+			} else {
+				sep = "="
+			}
+			if name == last {
+				fmt.Printf(",%.10f", param.Values[i])
+			} else {
+				fmt.Printf("\n%s%s%.10f", name, sep, param.Values[i])
+				last = name
+			}
+		}
+		fmt.Print("\n")
+	}
+	fmt.Println(" ****")
+}
+
+func WriteCom() {}
+
 func main() {
 	labels := []string{"C", "C", "C", "H", "H"}
 	fmt.Println(labels)
 	LoadGeoms("file07")
 	LoadEnergies("rel.dat")
-	LoadParams("opt.out")
+	params := LoadParams("opt.out")
+	DumpParams(params, "params.dat")
 }
