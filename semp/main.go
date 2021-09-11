@@ -83,7 +83,7 @@ type Param struct {
 
 // LoadParams extracts semi-empirical parameters from a Gaussian
 // output file
-func LoadParams(filename string) []Param {
+func LoadParams(filename string) (ret []Param) {
 	f, err := os.Open(filename)
 	if err != nil {
 		panic(err)
@@ -92,7 +92,9 @@ func LoadParams(filename string) []Param {
 	var (
 		line    string
 		fields  []string
+		first   bool
 		inparam bool
+		param   Param
 	)
 	for scanner.Scan() {
 		line = scanner.Text()
@@ -100,16 +102,46 @@ func LoadParams(filename string) []Param {
 		switch {
 		case line == " ****":
 			inparam = true
+			first = true
+			if param.Atom != "" {
+				ret = append(ret, param)
+			}
+			param = Param{}
 		case inparam && line == " ":
 			inparam = false
+			return
+		case inparam && first:
+			param.Atom = fields[0]
+			first = false
 		case inparam:
-			fmt.Println(fields)
+			for _, f := range fields {
+				split := strings.Split(f, "=")
+				if _, ok := DERIVED_PARAMS[split[0]]; ok {
+					continue
+				}
+				name := split[0]
+				vals := strings.Split(split[1], ",")
+				if name == "DCore" {
+					name += "=" + vals[0] + "," + vals[1]
+					vals = vals[2:]
+				}
+				for _, val := range vals {
+					param.Names = append(param.Names, name)
+					v, err := strconv.ParseFloat(val, 64)
+					if err != nil {
+						panic(err)
+					}
+					param.Values = append(param.Values, v)
+				}
+			}
 		}
 	}
-	return nil
+	return
 }
 
 func main() {
+	labels := []string{"C", "C", "C", "H", "H"}
+	fmt.Println(labels)
 	LoadGeoms("file07")
 	LoadEnergies("rel.dat")
 	LoadParams("opt.out")

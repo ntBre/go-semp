@@ -1,11 +1,6 @@
 * DONE load geometries
 * DONE load rel.dat
-* WAIT acquire atom labels
-  - hard-code for now, load from somewhere later
-  - probably from params file
-  - or read an input file directly and run the initial params run for
-    the user
-* TODO load params
+* DONE load params
 * TODO dump params
 * TODO write gaussian files
 * TODO call gaussian directly, run this on a node
@@ -15,3 +10,8 @@
 * TODO matrix math to get new params
   - use gonum, permissive license confirmed
 * TODO repeat
+* WAIT acquire atom labels
+  - hard-code for now, load from somewhere later
+  - probably from params file
+  - or read an input file directly and run the initial params run for
+    the user
