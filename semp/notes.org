@@ -24,6 +24,8 @@ the jacobian.
     first imo
 * TODO call gaussian directly, run this on a node
   - eventually request multiple cpus and run in parallel
+  - do I need to set up all the scratch dir stuff? or can I just call
+    in the current directory
 * TODO assemble Jacobian matrix from repeated calls to gaussian
   - might start with forward differences
     - forward differences - need baseline f(x) shared by all columns

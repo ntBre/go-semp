@@ -3,10 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
+
+	"os/exec"
+	"path/filepath"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -28,16 +32,10 @@ var (
 	DELTA = 6e-6
 )
 
-func toFloat(strs []string) []float64 {
-	ret := make([]float64, len(strs))
-	var err error
-	for i, s := range strs {
-		ret[i], err = strconv.ParseFloat(s, 64)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return ret
+type Param struct {
+	Atom   string
+	Names  []string
+	Values []float64
 }
 
 func LoadGeoms(filename string) (ret [][]float64) {
@@ -84,12 +82,6 @@ func LoadEnergies(filename string) (ret []float64) {
 		}
 	}
 	return
-}
-
-type Param struct {
-	Atom   string
-	Names  []string
-	Values []float64
 }
 
 // LoadParams extracts semi-empirical parameters from a Gaussian
@@ -179,19 +171,8 @@ func DumpParams(params []Param, filename string) {
 	fmt.Fprintln(f, " ****")
 }
 
-func WriteCom(names []string, coords []float64, paramfile, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	var geom strings.Builder
-	for i := range names {
-		fmt.Fprintf(&geom, "%s%20.12f%20.12f%20.12f\n",
-			names[i], coords[i], coords[i+1], coords[i+2],
-		)
-	}
-
+func WriteCom(w io.Writer, names []string, coords []float64, paramfile string) {
+	geom := ZipGeom(names, coords)
 	t, err := template.New("com").Parse(`%mem=1000mb
 %nprocs=1
 #P PM6=(print,zero)
@@ -206,42 +187,34 @@ the title
 	if err != nil {
 		panic(err)
 	}
-	t.Execute(f, struct {
+	t.Execute(w, struct {
 		Charge int
 		Spin   int
 		Geom   string
 		Params string
-	}{CHARGE, SPIN, geom.String(), paramfile})
-}
-
-func Len(params []Param) (sum int) {
-	for _, p := range params {
-		sum += len(p.Names)
-	}
-	return sum
+	}{CHARGE, SPIN, geom, paramfile})
 }
 
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
-func SEnergy(names []string, geoms [][]float64, paramfile string) []float64 {
-	// TODO
+func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+	for i, geom := range geoms {
+		filename := fmt.Sprintf("geom%d", i)
+		comfile := filename + ".com"
+		outfile := filename + ".out"
+		f, err := os.Create(filepath.Join(dir, comfile))
+		if err != nil {
+			panic(err)
+		}
+		WriteCom(f, names, geom, paramfile)
+		f.Close()
+		// TODO can I use cmd.Stdin and Stdout instead of
+		// writing files?
+		cmd := exec.Command("g16", comfile, outfile)
+		cmd.Dir = dir
+		// fmt.Println(cmd.String())
+	}
 	return make([]float64, len(geoms))
-}
-
-func Sub(a, b []float64) []float64 {
-	ret := make([]float64, len(a))
-	for i := range a {
-		ret[i] = a[i] - b[i]
-	}
-	return ret
-}
-
-func Scale(s float64, f []float64) []float64 {
-	ret := make([]float64, len(f))
-	for i := range f {
-		ret[i] = s * f[i]
-	}
-	return ret
 }
 
 // NumJac computes the numerical Jacobian of energies vs params
@@ -251,14 +224,16 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	for p := range params {
+		// I think this is where to parallelize, need a dir
+		// for each column
 		for i := range params[p].Values {
 			params[p].Values[i] += DELTA
 			DumpParams(params, "params.dat")
-			forward := SEnergy(names, geoms, "params.dat")
+			forward := SEnergy("test", names, geoms, "params.dat")
 
 			params[p].Values[i] -= 2 * DELTA
 			DumpParams(params, "params.dat")
-			backward := SEnergy(names, geoms, "params.dat")
+			backward := SEnergy("test", names, geoms, "params.dat")
 
 			// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h
 			// is DELTA here
@@ -279,6 +254,7 @@ func main() {
 	LoadEnergies("rel.dat")
 	params := LoadParams("opt.out")
 	DumpParams(params, "params.dat")
-	WriteCom(labels, geoms[0], "params.dat", "out")
+	WriteCom(os.Stdout, labels, geoms[0], "params.dat")
+	// takes 100 s without even running gaussian
 	NumJac(labels, geoms, params)
 }
