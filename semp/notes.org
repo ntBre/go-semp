@@ -20,18 +20,20 @@ the jacobian.
 * DONE dump params
 * DONE write a gaussian file
 * TODO write all the gaussian files needed for a step
+  - mostly done, need to test
   - I think this is viewing it backwards, I need to have the matrix
     first imo
 * TODO call gaussian directly, run this on a node
+  - mostly done need to test in real life
   - eventually request multiple cpus and run in parallel
   - do I need to set up all the scratch dir stuff? or can I just call
     in the current directory
-* TODO assemble Jacobian matrix from repeated calls to gaussian
-  - might start with forward differences
-    - forward differences - need baseline f(x) shared by all columns
-    - central differences - f(+x) and f(-x) for each column
+* DONE assemble Jacobian matrix from repeated calls to gaussian
+  - I think this is done, pending a good SEnergy implementation
 * TODO matrix math to get new params
   - use gonum, permissive license confirmed
+* TODO compute and print rmsd to log file
+  - also compute one initially
 * TODO repeat
 * WAIT acquire atom labels
   - hard-code for now, load from somewhere later

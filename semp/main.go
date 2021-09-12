@@ -212,7 +212,8 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []
 		// writing files?
 		cmd := exec.Command("g16", comfile, outfile)
 		cmd.Dir = dir
-		// fmt.Println(cmd.String())
+		// TODO actually run the command, collect output, and
+		// prepare for return
 	}
 	return make([]float64, len(geoms))
 }
@@ -225,7 +226,8 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	var col int
 	for p := range params {
 		// I think this is where to parallelize, need a dir
-		// for each column
+		// for each column; recycle dir name with semaphore
+		// and WaitGroup
 		for i := range params[p].Values {
 			params[p].Values[i] += DELTA
 			DumpParams(params, "params.dat")
