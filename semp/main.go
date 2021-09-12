@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 var (
@@ -20,6 +22,10 @@ var (
 	}
 	CHARGE = 0
 	SPIN   = 1
+	//  https://en.wikipedia.org/wiki/Numerical_differentiation
+	//  recommends cube root of machine eps (~2.2e16) for step
+	//  size
+	DELTA = 6e-6
 )
 
 func toFloat(strs []string) []float64 {
@@ -208,6 +214,64 @@ the title
 	}{CHARGE, SPIN, geom.String(), paramfile})
 }
 
+func Len(params []Param) (sum int) {
+	for _, p := range params {
+		sum += len(p.Names)
+	}
+	return sum
+}
+
+// SEnergy returns the relative semi-empirical energies in Ht
+// corresponding to params
+func SEnergy(names []string, geoms [][]float64, paramfile string) []float64 {
+	// TODO
+	return make([]float64, len(geoms))
+}
+
+func Sub(a, b []float64) []float64 {
+	ret := make([]float64, len(a))
+	for i := range a {
+		ret[i] = a[i] - b[i]
+	}
+	return ret
+}
+
+func Scale(s float64, f []float64) []float64 {
+	ret := make([]float64, len(f))
+	for i := range f {
+		ret[i] = s * f[i]
+	}
+	return ret
+}
+
+// NumJac computes the numerical Jacobian of energies vs params
+func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
+	rows := len(geoms)
+	cols := Len(params)
+	jac := mat.NewDense(rows, cols, nil)
+	var col int
+	for p := range params {
+		for i := range params[p].Values {
+			params[p].Values[i] += DELTA
+			DumpParams(params, "params.dat")
+			forward := SEnergy(names, geoms, "params.dat")
+
+			params[p].Values[i] -= 2 * DELTA
+			DumpParams(params, "params.dat")
+			backward := SEnergy(names, geoms, "params.dat")
+
+			// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h
+			// is DELTA here
+			jac.SetCol(col, Scale(1/(2*DELTA), Sub(forward, backward)))
+
+			// reset and move to next column
+			params[p].Values[i] += DELTA
+			col++
+		}
+	}
+	return jac
+}
+
 func main() {
 	labels := []string{"C", "C", "C", "H", "H"}
 	fmt.Println(labels)
@@ -216,4 +280,5 @@ func main() {
 	params := LoadParams("opt.out")
 	DumpParams(params, "params.dat")
 	WriteCom(labels, geoms[0], "params.dat", "out")
+	NumJac(labels, geoms, params)
 }

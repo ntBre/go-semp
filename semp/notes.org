@@ -1,13 +1,33 @@
+I need a little more info about Gaussian itself on Maple. Do I need to
+make separate directories for each column? Can I just invoke the g16
+command and write its stdin from memory?
+
+#+begin_src go
+  var buf bytes.Buffer
+  cmd := exec.Command("g16")
+  cmd.Stdin = WriteCom()
+  cmd.Stdout = buf
+#+end_src
+
+or something like that. What I do know is that I need to prepare
+input, give it to g16 and parse the output for the energy. The
+energies for each geometry for a given parameter set give a column in
+the jacobian.
+
 * DONE load geometries
 * DONE load rel.dat
 * DONE load params
 * DONE dump params
 * DONE write a gaussian file
 * TODO write all the gaussian files needed for a step
+  - I think this is viewing it backwards, I need to have the matrix
+    first imo
 * TODO call gaussian directly, run this on a node
   - eventually request multiple cpus and run in parallel
 * TODO assemble Jacobian matrix from repeated calls to gaussian
   - might start with forward differences
+    - forward differences - need baseline f(x) shared by all columns
+    - central differences - f(+x) and f(-x) for each column
 * TODO matrix math to get new params
   - use gonum, permissive license confirmed
 * TODO repeat
@@ -16,3 +36,6 @@
   - probably from params file
   - or read an input file directly and run the initial params run for
     the user
+* Units
+  Gaussian outputs the semi-empirical energies in AU, so I think I
+  don't have to do any conversions
