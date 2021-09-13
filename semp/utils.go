@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	// from https://physics.nist.gov/cgi-bin/cuu/Value?bohrrada0
+	toAng = 0.5291_772_109_03
+)
+
 func Len(params []Param) (sum int) {
 	for _, p := range params {
 		sum += len(p.Names)
@@ -35,7 +40,8 @@ func ZipGeom(names []string, coords []float64) string {
 	var geom strings.Builder
 	for i := range names {
 		fmt.Fprintf(&geom, "%s%20.12f%20.12f%20.12f\n",
-			names[i], coords[i], coords[i+1], coords[i+2],
+			names[i], coords[i]*toAng,
+			coords[i+1]*toAng, coords[i+2]*toAng,
 		)
 	}
 	return geom.String()

@@ -2,15 +2,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 
 	"os/exec"
-	"path/filepath"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -168,7 +169,7 @@ func DumpParams(params []Param, filename string) {
 		}
 		fmt.Fprint(f, "\n")
 	}
-	fmt.Fprintln(f, " ****")
+	fmt.Fprint(f, " ****\n\n")
 }
 
 func WriteCom(w io.Writer, names []string, coords []float64, paramfile string) {
@@ -195,27 +196,68 @@ the title
 	}{CHARGE, SPIN, geom, paramfile})
 }
 
+func RunGaussian(dir string, names []string,
+	geom []float64, paramfile string) (ret float64) {
+	var input bytes.Buffer
+	WriteCom(&input, names, geom, paramfile)
+	cmd := exec.Command("g16")
+	cmd.Dir = dir
+	cmd.Stdin = &input
+	r, _ := cmd.StdoutPipe()
+	err := cmd.Start()
+	if err != nil {
+		fmt.Printf("error running %s:\n", cmd.String())
+		panic(err)
+	}
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		if strings.Contains(scanner.Text(), "SCF Done") {
+			fields := strings.Fields(scanner.Text())
+			// could return here, but need to shut down
+			// command
+			ret, err = strconv.ParseFloat(fields[4], 64)
+			if err != nil {
+				fmt.Printf("error parsing %q\n", fields)
+				panic(err)
+			}
+		}
+	}
+	return
+}
+
+// SEnergy returns the relative semi-empirical energies in Ht
+// corresponding to params
+func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+	// parallel version, make sure the normal version works first
+	ret := make([]float64, len(geoms))
+	sema := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i, geom := range geoms {
+		sema <- struct{}{}
+		wg.Add(1)
+		go func(dir string, names []string,
+			geom []float64, paramfile string, i int) {
+			defer func() {
+				<-sema
+				wg.Done()
+			}()
+			ret[i] = RunGaussian(dir, names, geom, paramfile)
+		}(dir, names, geom, paramfile, i)
+	}
+	wg.Wait()
+	return ret
+}
+
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
 func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+	ret := make([]float64, len(geoms))
+	// TODO somthing is going wrong here
 	for i, geom := range geoms {
-		filename := fmt.Sprintf("geom%d", i)
-		comfile := filename + ".com"
-		outfile := filename + ".out"
-		f, err := os.Create(filepath.Join(dir, comfile))
-		if err != nil {
-			panic(err)
-		}
-		WriteCom(f, names, geom, paramfile)
-		f.Close()
-		// TODO can I use cmd.Stdin and Stdout instead of
-		// writing files?
-		cmd := exec.Command("g16", comfile, outfile)
-		cmd.Dir = dir
-		// TODO actually run the command, collect output, and
-		// prepare for return
+		ret[i] = RunGaussian(dir, names, geom, paramfile)
+		fmt.Printf("%5d%20.12f\n", i, ret[i])
 	}
-	return make([]float64, len(geoms))
+	return ret
 }
 
 // NumJac computes the numerical Jacobian of energies vs params
@@ -231,11 +273,11 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 		for i := range params[p].Values {
 			params[p].Values[i] += DELTA
 			DumpParams(params, "params.dat")
-			forward := SEnergy("test", names, geoms, "params.dat")
+			forward := SEnergy(".", names, geoms, "params.dat")
 
 			params[p].Values[i] -= 2 * DELTA
 			DumpParams(params, "params.dat")
-			backward := SEnergy("test", names, geoms, "params.dat")
+			backward := SEnergy(".", names, geoms, "params.dat")
 
 			// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h
 			// is DELTA here
@@ -251,12 +293,14 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 
 func main() {
 	labels := []string{"C", "C", "C", "H", "H"}
-	fmt.Println(labels)
 	geoms := LoadGeoms("file07")
 	LoadEnergies("rel.dat")
 	params := LoadParams("opt.out")
-	DumpParams(params, "params.dat")
-	WriteCom(os.Stdout, labels, geoms[0], "params.dat")
 	// takes 100 s without even running gaussian
-	NumJac(labels, geoms, params)
+	// NumJac(labels, geoms, params)
+	DumpParams(params, "params.dat")
+	energies := SEnergy(".", labels, geoms, "params.dat")
+	for _, e := range energies {
+		fmt.Printf("%20.12f\n", e)
+	}
 }

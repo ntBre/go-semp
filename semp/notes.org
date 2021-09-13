@@ -43,3 +43,6 @@ the jacobian.
 * Units
   Gaussian outputs the semi-empirical energies in AU, so I think I
   don't have to do any conversions
+* Actually don't have to keep writing the input file to stdin
+  - the geometries stay the same, only params change, so I could
+    actually write files and keep using them
