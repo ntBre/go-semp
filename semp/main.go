@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,11 @@ var (
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
 	DELTA = 6e-6
+)
+
+// Flags
+var (
+	debug = flag.Bool("debug", false, "toggle debugging information")
 )
 
 type Param struct {
@@ -172,6 +178,10 @@ func DumpParams(params []Param, filename string) {
 	fmt.Fprint(f, " ****\n\n")
 }
 
+var (
+	counter int
+)
+
 func WriteCom(w io.Writer, names []string, coords []float64, paramfile string) {
 	geom := ZipGeom(names, coords)
 	t, err := template.New("com").Parse(`%mem=1000mb
@@ -188,12 +198,18 @@ the title
 	if err != nil {
 		panic(err)
 	}
-	t.Execute(w, struct {
+	anon := struct {
 		Charge int
 		Spin   int
 		Geom   string
 		Params string
-	}{CHARGE, SPIN, geom, paramfile})
+	}{CHARGE, SPIN, geom, paramfile}
+	if *debug {
+		f, _ := os.Create(fmt.Sprintf("debug/file%d.com", counter))
+		counter++
+		t.Execute(f, anon)
+	}
+	t.Execute(w, anon)
 }
 
 func RunGaussian(dir string, names []string,
@@ -203,7 +219,12 @@ func RunGaussian(dir string, names []string,
 	cmd := exec.Command("g16")
 	cmd.Dir = dir
 	cmd.Stdin = &input
-	r, _ := cmd.StdoutPipe()
+	var r io.Reader
+	r, _ = cmd.StdoutPipe()
+	if *debug {
+		outfile, _ := os.Create(fmt.Sprintf("debug/output%d.com", counter-1))
+		r = io.TeeReader(r, outfile)
+	}
 	err := cmd.Start()
 	if err != nil {
 		fmt.Printf("error running %s:\n", cmd.String())
@@ -292,6 +313,10 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 }
 
 func main() {
+	flag.Parse()
+	if *debug {
+		os.Mkdir("debug", 0744)
+	}
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	LoadEnergies("rel.dat")
