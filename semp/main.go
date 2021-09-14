@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +38,8 @@ var (
 
 // Flags
 var (
-	debug = flag.Bool("debug", false, "toggle debugging information")
+	debug      = flag.Bool("debug", false, "toggle debugging information")
+	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 )
 
 type Param struct {
@@ -273,10 +276,12 @@ func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) 
 // corresponding to params
 func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
 	ret := make([]float64, len(geoms))
-	// TODO somthing is going wrong here
 	for i, geom := range geoms {
 		ret[i] = RunGaussian(dir, names, geom, paramfile)
-		fmt.Printf("%5d%20.12f\n", i, ret[i])
+		// hate to check this on every iteration
+		if *debug {
+			fmt.Printf("%5d%20.12f\n", i, ret[i])
+		}
 	}
 	return ret
 }
@@ -312,20 +317,57 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	return jac
 }
 
+func Relative(a []float64) []float64 {
+	min := a[0]
+	ret := make([]float64, len(a))
+	for i := range a {
+		if a[i] < min {
+			min = a[i]
+		}
+	}
+	for i := range a {
+		ret[i] = a[i] - min
+	}
+	return ret
+}
+
+func RMSD(a, b []float64) float64 {
+	if len(a) != len(b) {
+		panic("dimension mismatch")
+	}
+	var sum float64
+	for i := range a {
+		c := a[i] - b[i]
+		sum += c * c
+	}
+	sum /= float64(len(a))
+	return math.Sqrt(sum)
+}
+
 func main() {
 	flag.Parse()
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
-	LoadEnergies("rel.dat")
+	ai := LoadEnergies("rel.dat")
 	params := LoadParams("opt.out")
 	// takes 100 s without even running gaussian
 	// NumJac(labels, geoms, params)
 	DumpParams(params, "params.dat")
-	energies := SEnergy(".", labels, geoms, "params.dat")
+	energies := Relative(SEnergy(".", labels, geoms, "params.dat"))
 	for _, e := range energies {
 		fmt.Printf("%20.12f\n", e)
 	}
+	var iter int
+	fmt.Printf("RMSD %5d: %20.12f\n", iter, RMSD(ai, energies))
 }
