@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -17,6 +16,11 @@ import (
 	"os/exec"
 
 	"gonum.org/v1/gonum/mat"
+)
+
+const (
+	// from http://www.ilpi.com/msds/ref/energyunits.html
+	htToCm = 219_474.5459784
 )
 
 var (
@@ -34,7 +38,7 @@ var (
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
 	DELTA = 6e-6
-	CPUS = 8
+	CPUS  = 8
 )
 
 // Flags
@@ -73,7 +77,10 @@ func LoadGeoms(filename string) (ret [][]float64) {
 	return
 }
 
-func LoadEnergies(filename string) (ret []float64) {
+// LoadEnergies loads relative energies from filename and returns them
+// as a column vector
+func LoadEnergies(filename string) *mat.Dense {
+	ret := make([]float64, 0)
 	f, err := os.Open(filename)
 	defer f.Close()
 	if err != nil {
@@ -92,7 +99,7 @@ func LoadEnergies(filename string) (ret []float64) {
 			ret = append(ret, v)
 		}
 	}
-	return
+	return mat.NewDense(len(ret), 1, ret)
 }
 
 // LoadParams extracts semi-empirical parameters from a Gaussian
@@ -252,7 +259,7 @@ func RunGaussian(dir string, names []string,
 
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
-func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
 	// parallel version, make sure the normal version works first
 	ret := make([]float64, len(geoms))
 	sema := make(chan struct{}, CPUS)
@@ -270,7 +277,7 @@ func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) 
 		}(dir, names, geom, paramfile, i)
 	}
 	wg.Wait()
-	return ret
+	return mat.NewDense(len(ret), 1, ret)
 }
 
 // SEnergy returns the relative semi-empirical energies in Ht
@@ -294,6 +301,11 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	for p := range params {
+		// already parallelized SEnergy itself, but I could
+		// add another layer here. 8 cpus in SEnergy, r410
+		// nodes have 40 CPUs, so I could do 5 columns at a
+		// time.
+
 		// I think this is where to parallelize, need a dir
 		// for each column; recycle dir name with semaphore
 		// and WaitGroup
@@ -318,31 +330,51 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	return jac
 }
 
-func Relative(a []float64) []float64 {
-	min := a[0]
-	ret := make([]float64, len(a))
-	for i := range a {
-		if a[i] < min {
-			min = a[i]
-		}
+func Relative(a *mat.Dense) *mat.Dense {
+	min := mat.Min(a)
+	r, c := a.Dims()
+	if c != 1 {
+		panic("too many columns")
 	}
-	for i := range a {
-		ret[i] = a[i] - min
+	ret := mat.NewDense(r, c, nil)
+	for i := 0; i < r; i++ {
+		ret.Set(i, 0, a.At(i, 0)-min)
 	}
 	return ret
 }
 
-func RMSD(a, b []float64) float64 {
-	if len(a) != len(b) {
-		panic("dimension mismatch")
+func RMSD(a, b *mat.Dense) float64 {
+	var diff mat.Dense
+	diff.Sub(a, b)
+	return mat.Norm(&diff, 2)
+}
+
+func DumpVec(a *mat.Dense) {
+	r, c := a.Dims()
+	if c != 1 {
+		panic("more than one column in expected vector")
 	}
-	var sum float64
-	for i := range a {
-		c := a[i] - b[i]
-		sum += c * c
+	for i := 0; i < r; i++ {
+		fmt.Printf("%20.12f\n", a.At(i, 0))
 	}
-	sum /= float64(len(a))
-	return math.Sqrt(sum)
+}
+
+func UpdateParams(params []Param, v *mat.Dense) []Param {
+	ret := make([]Param, 0, len(params))
+	var i int
+	for _, p := range params {
+		vals := make([]float64, 0, len(p.Values))
+		for _, val := range p.Values {
+			vals = append(vals, val+v.At(i, 0))
+			i++
+		}
+		ret = append(ret, Param{
+			Atom:   p.Atom,
+			Names:  p.Names,
+			Values: vals,
+		})
+	}
+	return ret
 }
 
 func main() {
@@ -362,13 +394,35 @@ func main() {
 	geoms := LoadGeoms("file07")
 	ai := LoadEnergies("rel.dat")
 	params := LoadParams("opt.out")
-	// takes 100 s without even running gaussian
-	// NumJac(labels, geoms, params)
 	DumpParams(params, "params.dat")
-	energies := Relative(PLSEnergy(".", labels, geoms, "params.dat"))
-	for _, e := range energies {
-		fmt.Printf("%20.12f\n", e)
-	}
+	// BEGIN initial RMSD
+	energies := PLSEnergy(".", labels, geoms, "params.dat")
+	energies = Relative(energies)
 	var iter int
-	fmt.Printf("RMSD %5d: %20.12f\n", iter, RMSD(ai, energies))
+	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
+	// END initial RMSD
+
+	// BEGIN first step
+	jac := NumJac(labels, geoms, params)
+	var prod mat.Dense
+	prod.Mul(jac.T(), jac)
+	var diff mat.Dense
+	diff.Sub(ai, energies)
+	var prod2 mat.Dense
+	prod2.Mul(jac.T(), &diff)
+	var step mat.Dense
+	err := step.Solve(&prod, &prod2)
+	if err != nil {
+		panic(err)
+	}
+
+	newParams := UpdateParams(params, &step)
+	DumpParams(newParams, "params.dat")
+	// BEGIN initial RMSD
+	energies = PLSEnergy(".", labels, geoms, "params.dat")
+	energies = Relative(energies)
+	// var iter int
+	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
+	// END initial RMSD
+	// END first step
 }
