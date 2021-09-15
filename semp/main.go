@@ -37,14 +37,15 @@ var (
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
-	DELTA = 6e-6
-	CPUS  = 8
+	DELTA   = 6e-6
+	LOGFILE io.Writer
 )
 
 // Flags
 var (
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
+	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
 )
 
 type Param struct {
@@ -262,7 +263,7 @@ func RunGaussian(dir string, names []string,
 func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
 	// parallel version, make sure the normal version works first
 	ret := make([]float64, len(geoms))
-	sema := make(chan struct{}, CPUS)
+	sema := make(chan struct{}, *ncpus)
 	var wg sync.WaitGroup
 	for i, geom := range geoms {
 		sema <- struct{}{}
@@ -324,6 +325,7 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 
 			// reset and move to next column
 			params[p].Values[i] += DELTA
+			fmt.Fprintf(LOGFILE, "finished col %d\n", col)
 			col++
 		}
 	}
@@ -390,6 +392,7 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
+	LOGFILE, _ = os.Create("log")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	ai := LoadEnergies("rel.dat")
