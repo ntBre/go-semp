@@ -34,6 +34,7 @@ var (
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
 	DELTA = 6e-6
+	CPUS = 8
 )
 
 // Flags
@@ -254,7 +255,7 @@ func RunGaussian(dir string, names []string,
 func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
 	// parallel version, make sure the normal version works first
 	ret := make([]float64, len(geoms))
-	sema := make(chan struct{}, 8)
+	sema := make(chan struct{}, CPUS)
 	var wg sync.WaitGroup
 	for i, geom := range geoms {
 		sema <- struct{}{}
@@ -364,7 +365,7 @@ func main() {
 	// takes 100 s without even running gaussian
 	// NumJac(labels, geoms, params)
 	DumpParams(params, "params.dat")
-	energies := Relative(SEnergy(".", labels, geoms, "params.dat"))
+	energies := Relative(PLSEnergy(".", labels, geoms, "params.dat"))
 	for _, e := range energies {
 		fmt.Printf("%20.12f\n", e)
 	}
