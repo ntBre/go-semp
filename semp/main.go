@@ -37,7 +37,7 @@ var (
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
-	DELTA   = 6e-6
+	DELTA   = 6e-3 // probably need to go back to -6
 	LOGFILE io.Writer
 )
 
@@ -198,7 +198,7 @@ func WriteCom(w io.Writer, names []string, coords []float64, paramfile string) {
 	geom := ZipGeom(names, coords)
 	t, err := template.New("com").Parse(`%mem=1000mb
 %nprocs=1
-#P PM6=(print,zero)
+#P PM6=(print,zero,input)
 
 the title
 

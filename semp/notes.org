@@ -14,6 +14,8 @@ input, give it to g16 and parse the output for the energy. The
 energies for each geometry for a given parameter set give a column in
 the jacobian.
 
+* IDEA try only keeping nonzero params
+  - should really reduce the number considered
 * DONE load geometries
 * DONE load rel.dat
 * DONE load params

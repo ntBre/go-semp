@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestZipGeom(t *testing.T) {
 	got := ZipGeom([]string{"C", "C", "C", "H", "H"},
@@ -19,5 +22,16 @@ H      0.000000000000     -0.844181605584      0.479939859634
 `
 	if got != want {
 		t.Errorf("got\n%v, wanted\n%v\n", got, want)
+	}
+}
+
+func TestSub(t *testing.T) {
+	got := Sub(
+		[]float64{1, 2, 3},
+		[]float64{4, 8, 16},
+	)
+	want := []float64{-3, -6, -13}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
