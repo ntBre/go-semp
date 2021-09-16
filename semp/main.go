@@ -416,6 +416,7 @@ func main() {
 	var step mat.Dense
 	err := step.Solve(&prod, &prod2)
 	if err != nil {
+		fmt.Println(jac)
 		panic(err)
 	}
 
