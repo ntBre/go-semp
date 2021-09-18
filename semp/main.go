@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 const (
 	// from http://www.ilpi.com/msds/ref/energyunits.html
 	htToCm = 219_474.5459784
+	EPS    = 1e-14
 )
 
 var (
@@ -31,13 +33,18 @@ var (
 		"DDN":      {},
 		"KON":      {},
 		"EISol":    {},
+		// Adding these trying to make matrix not singular
+		"DCore":  {},
+		"EHeat":  {},
+		"DipHyp": {},
+		"GCore":  {},
 	}
 	CHARGE = 0
 	SPIN   = 1
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size
-	DELTA   = 6e-3 // probably need to go back to -6
+	DELTA   = 6e-6
 	LOGFILE io.Writer
 )
 
@@ -103,9 +110,16 @@ func LoadEnergies(filename string) *mat.Dense {
 	return mat.NewDense(len(ret), 1, ret)
 }
 
+func Equal(a, b float64) bool {
+	if math.Abs(a-b) > EPS {
+		return false
+	}
+	return true
+}
+
 // LoadParams extracts semi-empirical parameters from a Gaussian
 // output file
-func LoadParams(filename string) (ret []Param) {
+func LoadParams(filename string) (ret []Param, num int) {
 	f, err := os.Open(filename)
 	defer f.Close()
 	if err != nil {
@@ -149,12 +163,16 @@ func LoadParams(filename string) (ret []Param) {
 					vals = vals[2:]
 				}
 				for _, val := range vals {
-					param.Names = append(param.Names, name)
 					v, err := strconv.ParseFloat(val, 64)
 					if err != nil {
 						panic(err)
 					}
-					param.Values = append(param.Values, v)
+					// skip zero params for now
+					if v != 0.0 {
+						param.Names = append(param.Names, name)
+						param.Values = append(param.Values, v)
+						num++
+					}
 				}
 			}
 		}
@@ -325,7 +343,8 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 
 			// reset and move to next column
 			params[p].Values[i] += DELTA
-			fmt.Fprintf(LOGFILE, "finished col %d\n", col)
+			fmt.Fprintf(LOGFILE, "finished col %d -> %s of %s\n", col,
+				params[p].Names[i], params[p].Atom)
 			col++
 		}
 	}
@@ -357,8 +376,20 @@ func DumpVec(a *mat.Dense) {
 		panic("more than one column in expected vector")
 	}
 	for i := 0; i < r; i++ {
-		fmt.Printf("%20.12f\n", a.At(i, 0))
+		fmt.Printf("%5d%20.12f\n", i, a.At(i, 0))
 	}
+}
+
+func DumpMat(m mat.Matrix) {
+	r, c := m.Dims()
+	for i := 0; i < r; i++ {
+		fmt.Printf("%5d", i)
+		for j := 0; j < c; j++ {
+			fmt.Printf("%12.8f", m.At(i, j))
+		}
+		fmt.Print("\n")
+	}
+	fmt.Print("\n")
 }
 
 func UpdateParams(params []Param, v *mat.Dense) []Param {
@@ -396,7 +427,8 @@ func main() {
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	ai := LoadEnergies("rel.dat")
-	params := LoadParams("opt.out")
+	params, num := LoadParams("opt.out")
+	fmt.Printf("loaded %d params\n", num)
 	DumpParams(params, "params.dat")
 	// BEGIN initial RMSD
 	energies := PLSEnergy(".", labels, geoms, "params.dat")
@@ -416,7 +448,16 @@ func main() {
 	var step mat.Dense
 	err := step.Solve(&prod, &prod2)
 	if err != nil {
-		fmt.Println(jac)
+		fmt.Println("jacT")
+		DumpMat(jac.T())
+		fmt.Println("prod")
+		DumpMat(&prod)
+		fmt.Println("diff")
+		DumpVec(&diff)
+		fmt.Println("prod2")
+		DumpMat(&prod2)
+		fmt.Println("step")
+		DumpVec(&step)
 		panic(err)
 	}
 

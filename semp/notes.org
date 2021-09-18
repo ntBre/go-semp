@@ -16,6 +16,19 @@ the jacobian.
 
 * IDEA try only keeping nonzero params
   - should really reduce the number considered
+  - trying this out
+* having trouble with singular matrix
+  - might be too many params for the number of energies, not a unique
+    solution
+  - retrying with 24 geometries to the 23 params
+  - stll not helping, trying removing gcore and then I'm going to try
+    adjusting the step size again
+    - gcore did not help, back to smaller step size
+    - the condition number did get a bit smaller, but not sufficiently
+      so to make it not an error
+  - could be singular because I'm not taking out terms that relate to
+    each other, might have to parse more carefully
+    - for example 1,2 param vs 2,1 should not be independent
 * DONE load geometries
 * DONE load rel.dat
 * DONE load params
