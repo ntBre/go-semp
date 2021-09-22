@@ -43,8 +43,8 @@ var (
 	SPIN   = 1
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
-	//  size
-	DELTA   = 6e-6
+	//  size => 6e-6; adjusting down from there
+	DELTA   = 1e-8
 	LOGFILE io.Writer
 )
 
@@ -313,37 +313,43 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []
 	return ret
 }
 
+func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
+	params[p].Values[i] += DELTA
+	DumpParams(params, "params.dat")
+	forward := SEnergy(".", names, geoms, "params.dat")
+
+	params[p].Values[i] -= 2 * DELTA
+	DumpParams(params, "params.dat")
+	backward := SEnergy(".", names, geoms, "params.dat")
+
+	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
+	return Scale(1/(2*DELTA), Sub(forward, backward))
+}
+
+func ForwardDiff(names []string, geoms [][]float64,
+	params []Param, p, i int, energies *mat.Dense) []float64 {
+	base := energies.RawMatrix().Data
+	params[p].Values[i] += DELTA
+	DumpParams(params, "params.dat")
+	forward := SEnergy(".", names, geoms, "params.dat")
+
+	// f'(x) ~ [ f(x+h) - f(x) ] / h ; where h is DELTA here
+	return Scale(1/DELTA, Sub(forward, base))
+}
+
 // NumJac computes the numerical Jacobian of energies vs params
-func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
+func NumJac(names []string, geoms [][]float64,
+	params []Param, energies *mat.Dense) *mat.Dense {
 	rows := len(geoms)
 	cols := Len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	for p := range params {
-		// already parallelized SEnergy itself, but I could
-		// add another layer here. 8 cpus in SEnergy, r410
-		// nodes have 40 CPUs, so I could do 5 columns at a
-		// time.
-
-		// I think this is where to parallelize, need a dir
-		// for each column; recycle dir name with semaphore
-		// and WaitGroup
 		for i := range params[p].Values {
-			params[p].Values[i] += DELTA
-			DumpParams(params, "params.dat")
-			forward := SEnergy(".", names, geoms, "params.dat")
-
-			params[p].Values[i] -= 2 * DELTA
-			DumpParams(params, "params.dat")
-			backward := SEnergy(".", names, geoms, "params.dat")
-
-			// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h
-			// is DELTA here
-			jac.SetCol(col, Scale(1/(2*DELTA), Sub(forward, backward)))
-
-			// reset and move to next column
-			params[p].Values[i] += DELTA
-			fmt.Fprintf(LOGFILE, "finished col %d -> %s of %s\n", col,
+			data := CentralDiff(names, geoms, params, p, i)
+			// data := ForwardDiff(names, geoms, params, p, i, energies)
+			jac.SetCol(col, data)
+			fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 				params[p].Names[i], params[p].Atom)
 			col++
 		}
@@ -364,7 +370,7 @@ func Relative(a *mat.Dense) *mat.Dense {
 	return ret
 }
 
-func RMSD(a, b *mat.Dense) float64 {
+func Norm(a, b *mat.Dense) float64 {
 	var diff mat.Dense
 	diff.Sub(a, b)
 	return mat.Norm(&diff, 2)
@@ -430,44 +436,44 @@ func main() {
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
 	DumpParams(params, "params.dat")
-	// BEGIN initial RMSD
-	energies := PLSEnergy(".", labels, geoms, "params.dat")
-	energies = Relative(energies)
+	// BEGIN initial Norm
+	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
+	energies := Relative(baseEnergies)
 	var iter int
-	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
-	// END initial RMSD
+	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, energies)*htToCm)
+	iter++
+	// END initial Norm
 
 	// BEGIN first step
-	jac := NumJac(labels, geoms, params)
-	var prod mat.Dense
-	prod.Mul(jac.T(), jac)
-	var diff mat.Dense
-	diff.Sub(ai, energies)
-	var prod2 mat.Dense
-	prod2.Mul(jac.T(), &diff)
-	var step mat.Dense
-	err := step.Solve(&prod, &prod2)
-	if err != nil {
-		fmt.Println("jacT")
-		DumpMat(jac.T())
-		fmt.Println("prod")
-		DumpMat(&prod)
-		fmt.Println("diff")
-		DumpVec(&diff)
-		fmt.Println("prod2")
-		DumpMat(&prod2)
-		fmt.Println("step")
-		DumpVec(&step)
-		panic(err)
+	for i := 0; i < 100; i++ {
+		jac := NumJac(labels, geoms, params, baseEnergies)
+		var prod mat.Dense
+		prod.Mul(jac.T(), jac)
+		var diff mat.Dense
+		diff.Sub(ai, energies)
+		var prod2 mat.Dense
+		prod2.Mul(jac.T(), &diff)
+		var step mat.Dense
+		err := step.Solve(&prod, &prod2)
+		if err != nil {
+			fmt.Println("jacT")
+			DumpMat(jac.T())
+			fmt.Println("prod")
+			DumpMat(&prod)
+			fmt.Println("diff")
+			DumpVec(&diff)
+			fmt.Println("prod2")
+			DumpMat(&prod2)
+			fmt.Println("step")
+			DumpVec(&step)
+			panic(err)
+		}
+		newParams := UpdateParams(params, &step)
+		DumpParams(newParams, "params.dat")
+		energies = PLSEnergy(".", labels, geoms, "params.dat")
+		energies = Relative(energies)
+		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, energies)*htToCm)
+		iter++
+		params = newParams
 	}
-
-	newParams := UpdateParams(params, &step)
-	DumpParams(newParams, "params.dat")
-	// BEGIN initial RMSD
-	energies = PLSEnergy(".", labels, geoms, "params.dat")
-	energies = Relative(energies)
-	// var iter int
-	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
-	// END initial RMSD
-	// END first step
 }

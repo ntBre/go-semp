@@ -9,10 +9,34 @@ command and write its stdin from memory?
   cmd.Stdout = buf
 #+end_src
 
+[[pdf:/home/brent/Research/Prospectus/Paper/main.pdf][document]]
+
 or something like that. What I do know is that I need to prepare
 input, give it to g16 and parse the output for the energy. The
 energies for each geometry for a given parameter set give a column in
 the jacobian.
+
+* new plan to speed up
+  - use submission framework from pbqff and run on head node
+  - multiple directories so I can keep doing the @params thing
+  - parallelize over those directories
+    - one column of numjac in each dir
+
+* the RMSD finally went down!!
+  - 24 energies, 17 params, central differences
+  - I wonder if factoring CentralDiff into a function solved the
+    problem. I might have been editing the params in place and messing
+    things up before
+  - although I did think I was resetting them
+  - forward differences give much worse rmsd, at least initially
+  - and then crashed after taking a terrible step, probably not going
+    to use forward differences
+
+* trying out forward differences
+  - this requires passing (or calculating I guess) the energy of f(ϐ),
+    so I passed this into NumJac. I can remove this if I decide
+    against forward differences
+  - I think there may just be too few energies to make it non singular
 
 * IDEA try only keeping nonzero params
   - should really reduce the number considered
