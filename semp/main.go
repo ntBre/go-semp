@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"os/exec"
 
@@ -256,9 +257,11 @@ func RunGaussian(dir string, names []string,
 		r = io.TeeReader(r, outfile)
 	}
 	err := cmd.Start()
-	if err != nil {
-		fmt.Printf("error running %s:\n", cmd.String())
-		panic(err)
+	// actually release the resources for a command
+	defer cmd.Wait()
+	for i := 3; err != nil && i > 0; i-- {
+		fmt.Printf("error running %s, sleeping\n", cmd.String())
+		time.Sleep(60 * time.Second)
 	}
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -417,6 +420,7 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 }
 
 func main() {
+	fmt.Println(os.Hostname())
 	flag.Parse()
 	if *debug {
 		os.Mkdir("debug", 0744)
