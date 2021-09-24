@@ -214,7 +214,7 @@ func WriteParams(params []Param, f io.Writer) {
 }
 
 func LogParams(w io.Writer, params []Param, iter int) {
-	fmt.Fprintln(w, "Iter %5d\n", iter)
+	fmt.Fprintf(w, "Iter %5d\n", iter)
 	WriteParams(params, w)
 }
 
@@ -506,7 +506,7 @@ func main() {
 	)
 	fmt.Printf("%17s%12s%12s\n", "cm-1", "cm-1", "s")
 	fmt.Printf("%5s%12s%12s%12s\n", "Iter", "Norm", "Delta", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12d\n", iter, norm, norm-last, 0)
+	fmt.Printf("%5d%12.4f%12.4f%12.1f\n", iter, norm, norm-last, 0.0)
 	LogParams(paramLog, params, iter)
 	iter++
 	last = norm
@@ -518,8 +518,9 @@ func main() {
 		se = PLSEnergy(".", labels, geoms, "params.dat")
 		se = Relative(se)
 		norm = Norm(ai, se) * htToCm
-		fmt.Printf("%5d%12.4f%12.4f%12d\n",
-			iter, norm, norm-last, time.Since(start)/1_000_000_000)
+		fmt.Printf("%5d%12.4f%12.4f%12.1f\n",
+			iter, norm, norm-last,
+			float64(time.Since(start)/1_000_000_000))
 		start = time.Now()
 		last = norm
 		params = newParams
