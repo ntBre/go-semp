@@ -20,8 +20,18 @@ the jacobian.
 
 * running once with 10 maxit to collect a profile and then turning loose for the weekend
 
+* eland timing
+  | Jobs | CPUs | ncpus | Time/Iter |
+  |------+------+-------+-----------|
+  |   24 |   12 |    12 |      79.3 |
+  |   24 |   24 |    24 |        51 |
+  |   24 |   24 |    48 |        50 |
+  |   24 |   48 |    48 |           |
+  |   24 |   48 |    96 |        48 |
+
 * eland
   - actual number of cpus is CPU(s)/thread(s) per core
+  - 45 sec/iter for 24 cpus and 24 jobs
 
 * WAIT check footnote 3 of marquardt63
   - tried this, but not really working, maybe my function for K isn't
