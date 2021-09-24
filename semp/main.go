@@ -54,6 +54,7 @@ var (
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
+	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 )
 
 type Param struct {
@@ -247,7 +248,7 @@ func RunGaussian(dir string, names []string,
 	geom []float64, paramfile string) (ret float64) {
 	var input bytes.Buffer
 	WriteCom(&input, names, geom, paramfile)
-	cmd := exec.Command("g16")
+	cmd := exec.Command(*gauss)
 	cmd.Dir = dir
 	cmd.Stdin = &input
 	var r io.Reader
@@ -255,6 +256,8 @@ func RunGaussian(dir string, names []string,
 	if *debug {
 		outfile, _ := os.Create(fmt.Sprintf("debug/output%d.com", counter-1))
 		r = io.TeeReader(r, outfile)
+		errfile, _ := os.Create(fmt.Sprintf("debug/output%d.err", counter-1))
+		cmd.Stderr = errfile
 	}
 	err := cmd.Start()
 	// actually release the resources for a command
@@ -357,6 +360,7 @@ func NumJac(names []string, geoms [][]float64,
 			col++
 		}
 	}
+	DumpMat(jac)
 	return jac
 }
 
@@ -419,6 +423,31 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 	return ret
 }
 
+func GaussNewton(jac, ai, se *mat.Dense) *mat.Dense {
+	var prod mat.Dense
+	prod.Mul(jac.T(), jac)
+	var diff mat.Dense
+	diff.Sub(ai, se)
+	var prod2 mat.Dense
+	prod2.Mul(jac.T(), &diff)
+	var step mat.Dense
+	err := step.Solve(&prod, &prod2)
+	if err != nil {
+		fmt.Println("jacT")
+		DumpMat(jac.T())
+		fmt.Println("prod")
+		DumpMat(&prod)
+		fmt.Println("diff")
+		DumpVec(&diff)
+		fmt.Println("prod2")
+		DumpMat(&prod2)
+		fmt.Println("step")
+		DumpVec(&step)
+		panic(err)
+	}
+	return &step
+}
+
 func main() {
 	fmt.Println(os.Hostname())
 	flag.Parse()
@@ -442,41 +471,21 @@ func main() {
 	DumpParams(params, "params.dat")
 	// BEGIN initial Norm
 	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
-	energies := Relative(baseEnergies)
+	se := Relative(baseEnergies)
 	var iter int
-	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, energies)*htToCm)
+	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, se)*htToCm)
 	iter++
 	// END initial Norm
 
 	// BEGIN first step
 	for i := 0; i < 100; i++ {
 		jac := NumJac(labels, geoms, params, baseEnergies)
-		var prod mat.Dense
-		prod.Mul(jac.T(), jac)
-		var diff mat.Dense
-		diff.Sub(ai, energies)
-		var prod2 mat.Dense
-		prod2.Mul(jac.T(), &diff)
-		var step mat.Dense
-		err := step.Solve(&prod, &prod2)
-		if err != nil {
-			fmt.Println("jacT")
-			DumpMat(jac.T())
-			fmt.Println("prod")
-			DumpMat(&prod)
-			fmt.Println("diff")
-			DumpVec(&diff)
-			fmt.Println("prod2")
-			DumpMat(&prod2)
-			fmt.Println("step")
-			DumpVec(&step)
-			panic(err)
-		}
-		newParams := UpdateParams(params, &step)
+		step := GaussNewton(jac, ai, se)
+		newParams := UpdateParams(params, step)
 		DumpParams(newParams, "params.dat")
-		energies = PLSEnergy(".", labels, geoms, "params.dat")
-		energies = Relative(energies)
-		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, energies)*htToCm)
+		se = PLSEnergy(".", labels, geoms, "params.dat")
+		se = Relative(se)
+		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, se)*htToCm)
 		iter++
 		params = newParams
 	}
