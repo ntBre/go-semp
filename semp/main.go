@@ -25,7 +25,6 @@ const (
 	htToCm = 219_474.5459784
 	EPS    = 1e-14
 	THRESH = 1.0
-	MAXIT  = 100
 	NU     = 2.0
 )
 
@@ -59,6 +58,7 @@ var (
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
+	maxit      = flag.Int("maxit", 100, "maximum iterations")
 )
 
 type Param struct {
@@ -420,13 +420,13 @@ func Identity(n int) *mat.Dense {
 	return ret
 }
 
-func UpdateParams(params []Param, v *mat.Dense) []Param {
+func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	ret := make([]Param, 0, len(params))
 	var i int
 	for _, p := range params {
 		vals := make([]float64, 0, len(p.Values))
 		for _, val := range p.Values {
-			vals = append(vals, val+v.At(i, 0))
+			vals = append(vals, val+v.At(i, 0)*scale)
 			i++
 		}
 		ret = append(ret, Param{
@@ -438,7 +438,7 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 	return ret
 }
 
-func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	// LHS
 	var prod mat.Dense
 	prod.Mul(jac.T(), jac)
@@ -468,7 +468,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
 		DumpVec(&step)
 		panic(err)
 	}
-	return UpdateParams(params, &step)
+	return UpdateParams(params, &step, scale)
 }
 
 func main() {
@@ -509,13 +509,49 @@ func main() {
 	iter++
 	last = norm
 	start := time.Now()
-	for i := 0; i < MAXIT && norm > THRESH; i++ {
+	for iter < *maxit && norm > THRESH {
 		jac := NumJac(labels, geoms, params, baseEnergies)
-		newParams := LevMar(jac, ai, se, params)
+		*lambda /= NU
+		// BEGIN copy-paste
+		newParams := LevMar(jac, ai, se, params, 1.0)
 		DumpParams(newParams, "params.dat")
 		se = PLSEnergy(".", labels, geoms, "params.dat")
 		se = Relative(se)
 		norm = Norm(ai, se) * htToCm
+		// END copy-paste
+
+		// case ii. and iii. of levmar, first case is ii. from
+		// Marquardt63
+		var bad bool
+		for i := 0; norm > last; i++ {
+			*lambda *= NU
+			newParams := LevMar(jac, ai, se, params, 1.0)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE,
+				"\tλ_%d to %g\n", i, *lambda)
+			if *lambda > 1.0 {
+				// case iii. failed, try footnote
+				bad = true
+				*lambda *= math.Pow(NU, float64(-(i + 1)))
+				break
+			}
+		}
+		var prev float64
+		// just break if decreasing k doesnt change the norm
+		for i := 2; bad && norm > last && norm-prev > 1e-6; i++ {
+			k := 1.0 / float64(int(1)<<i)
+			newParams := LevMar(jac, ai, se, params, k)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
+				i, k, norm-last)
+			prev = norm
+		}
 		fmt.Printf("%5d%12.4f%12.4f%12.1f\n",
 			iter, norm, norm-last,
 			float64(time.Since(start))/1e9)
