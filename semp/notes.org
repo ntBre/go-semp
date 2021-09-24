@@ -16,6 +16,28 @@ input, give it to g16 and parse the output for the energy. The
 energies for each geometry for a given parameter set give a column in
 the jacobian.
 
+* version with constant lambda converged smoothly down to ~30 cm-1
+  [[pdf:/home/brent/Library/Marquardt63.pdf][Actual lambda definitions from Marquardt, page 8]]
+  - but then it got stuck
+
+* finally got set up to run on eland
+  - however, the energies are not matching up, at least using
+    PLSEnergy, even with ncpus=1
+  - switched back to SEnergy and also replaced the PL calls in main
+    - same results on eland as with PL
+    - maple also gives the same results as before with PL and ncpus=1
+  - PL version seems to have worked at least for the first call
+  - OH I bet something isn't rewriting the params file
+    - no, I always write params before calculating
+  - must be a concurrency bug if I can reproduce the numbers with
+    SEnergy
+  - I'm getting different answers between eland and maple with the
+    same code running, very suspicious
+  - the eland version actually seems to be working better, it
+    converges very rapidly but then oscillates
+    - probably need to reduce the step size when close to a minimum or
+      use the damping approach, is that the same?
+
 * new plan to speed up
   - use submission framework from pbqff and run on head node
   - multiple directories so I can keep doing the @params thing

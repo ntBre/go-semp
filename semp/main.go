@@ -24,6 +24,14 @@ const (
 	// from http://www.ilpi.com/msds/ref/energyunits.html
 	htToCm = 219_474.5459784
 	EPS    = 1e-14
+	THRESH = 1.0
+	MAXIT  = 100
+)
+
+var (
+	// adjustable params for levmar
+	LAMBDA = 0.0e-2
+	NU     = 2.0
 )
 
 var (
@@ -267,6 +275,7 @@ func RunGaussian(dir string, names []string,
 		time.Sleep(60 * time.Second)
 	}
 	scanner := bufio.NewScanner(r)
+	var found bool
 	for scanner.Scan() {
 		if strings.Contains(scanner.Text(), "SCF Done") {
 			fields := strings.Fields(scanner.Text())
@@ -277,7 +286,11 @@ func RunGaussian(dir string, names []string,
 				fmt.Printf("error parsing %q\n", fields)
 				panic(err)
 			}
+			found = true
 		}
+	}
+	if !found {
+		panic("energy not found in gaussian run")
 	}
 	return
 }
@@ -307,7 +320,7 @@ func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) 
 
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
-func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
 	ret := make([]float64, len(geoms))
 	for i, geom := range geoms {
 		ret[i] = RunGaussian(dir, names, geom, paramfile)
@@ -316,32 +329,34 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []
 			fmt.Printf("%5d%20.12f\n", i, ret[i])
 		}
 	}
-	return ret
+	return mat.NewDense(len(ret), 1, ret)
 }
 
 func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
 	params[p].Values[i] += DELTA
 	DumpParams(params, "params.dat")
-	forward := SEnergy(".", names, geoms, "params.dat")
+	forward := PLSEnergy(".", names, geoms, "params.dat")
 
 	params[p].Values[i] -= 2 * DELTA
 	DumpParams(params, "params.dat")
-	backward := SEnergy(".", names, geoms, "params.dat")
+	backward := PLSEnergy(".", names, geoms, "params.dat")
 
 	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
-	return Scale(1/(2*DELTA), Sub(forward, backward))
+	var diff mat.Dense
+	diff.Sub(forward, backward)
+	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
 }
 
-func ForwardDiff(names []string, geoms [][]float64,
-	params []Param, p, i int, energies *mat.Dense) []float64 {
-	base := energies.RawMatrix().Data
-	params[p].Values[i] += DELTA
-	DumpParams(params, "params.dat")
-	forward := SEnergy(".", names, geoms, "params.dat")
+// func ForwardDiff(names []string, geoms [][]float64,
+// 	params []Param, p, i int, energies *mat.Dense) []float64 {
+// 	base := energies.RawMatrix().Data
+// 	params[p].Values[i] += DELTA
+// 	DumpParams(params, "params.dat")
+// 	forward := SEnergy(".", names, geoms, "params.dat")
 
-	// f'(x) ~ [ f(x+h) - f(x) ] / h ; where h is DELTA here
-	return Scale(1/DELTA, Sub(forward, base))
-}
+// 	// f'(x) ~ [ f(x+h) - f(x) ] / h ; where h is DELTA here
+// 	return Scale(1/DELTA, Sub(forward, base))
+// }
 
 // NumJac computes the numerical Jacobian of energies vs params
 func NumJac(names []string, geoms [][]float64,
@@ -373,6 +388,20 @@ func Relative(a *mat.Dense) *mat.Dense {
 	ret := mat.NewDense(r, c, nil)
 	for i := 0; i < r; i++ {
 		ret.Set(i, 0, a.At(i, 0)-min)
+	}
+	return ret
+}
+
+func SlRelative(a []float64) []float64 {
+	ret := make([]float64, len(a))
+	min := a[0]
+	for _, i := range a {
+		if i < min {
+			min = i
+		}
+	}
+	for i := range a {
+		ret[i] = a[i] - min
 	}
 	return ret
 }
@@ -423,15 +452,31 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 	return ret
 }
 
-func GaussNewton(jac, ai, se *mat.Dense) *mat.Dense {
+func Identity(n int) *mat.Dense {
+	ret := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		ret.Set(i, i, 1.0)
+	}
+	return ret
+}
+
+func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
+	// LHS
 	var prod mat.Dense
 	prod.Mul(jac.T(), jac)
+	r, _ := prod.Dims()
+	eye := Identity(r)
+	var Leye mat.Dense
+	Leye.Scale(LAMBDA, eye)
+	var sum mat.Dense
+	sum.Add(&prod, &Leye)
+	// RHS
 	var diff mat.Dense
 	diff.Sub(ai, se)
 	var prod2 mat.Dense
 	prod2.Mul(jac.T(), &diff)
 	var step mat.Dense
-	err := step.Solve(&prod, &prod2)
+	err := step.Solve(&sum, &prod2)
 	if err != nil {
 		fmt.Println("jacT")
 		DumpMat(jac.T())
@@ -445,7 +490,7 @@ func GaussNewton(jac, ai, se *mat.Dense) *mat.Dense {
 		DumpVec(&step)
 		panic(err)
 	}
-	return &step
+	return UpdateParams(params, &step)
 }
 
 func main() {
@@ -471,21 +516,31 @@ func main() {
 	DumpParams(params, "params.dat")
 	// BEGIN initial Norm
 	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
-	se := Relative(baseEnergies)
+	energies := Relative(baseEnergies)
+	norm := Norm(ai, energies) * htToCm
 	var iter int
-	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, se)*htToCm)
+	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
 	iter++
 	// END initial Norm
 
 	// BEGIN first step
-	for i := 0; i < 100; i++ {
+	// var last float64
+	for i := 0; i < MAXIT && norm > THRESH; i++ {
 		jac := NumJac(labels, geoms, params, baseEnergies)
-		step := GaussNewton(jac, ai, se)
-		newParams := UpdateParams(params, step)
+		newParams := LevMar(jac, ai, energies, params)
 		DumpParams(newParams, "params.dat")
-		se = PLSEnergy(".", labels, geoms, "params.dat")
-		se = Relative(se)
-		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, Norm(ai, se)*htToCm)
+		energies = PLSEnergy(".", labels, geoms, "params.dat")
+		energies = Relative(energies)
+		norm = Norm(ai, energies) * htToCm
+		// this is not really a proper implementation of
+		// levmar, need to try the different values instead,
+		// but it's worth trying I think
+		// if norm < last {
+		// 	LAMBDA /= NU
+		// } else {
+		// 	LAMBDA *= NU
+		// }
+		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
 		iter++
 		params = newParams
 	}
