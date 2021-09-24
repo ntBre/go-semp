@@ -26,11 +26,6 @@ const (
 	EPS    = 1e-14
 	THRESH = 1.0
 	MAXIT  = 100
-)
-
-var (
-	// adjustable params for levmar
-	LAMBDA = 0.0e-2
 	NU     = 2.0
 )
 
@@ -63,6 +58,7 @@ var (
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
+	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
 )
 
 type Param struct {
@@ -449,7 +445,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
 	r, _ := prod.Dims()
 	eye := Identity(r)
 	var Leye mat.Dense
-	Leye.Scale(LAMBDA, eye)
+	Leye.Scale(*lambda, eye)
 	var sum mat.Dense
 	sum.Add(&prod, &Leye)
 	// RHS
@@ -476,8 +472,10 @@ func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
 }
 
 func main() {
-	fmt.Println(os.Hostname())
+	host, _ := os.Hostname()
 	flag.Parse()
+	fmt.Printf("running with %d cpus on host: %s\n", *ncpus, host)
+	fmt.Printf("initial lambda: %.14f\n", *lambda)
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
@@ -520,7 +518,7 @@ func main() {
 		norm = Norm(ai, se) * htToCm
 		fmt.Printf("%5d%12.4f%12.4f%12.1f\n",
 			iter, norm, norm-last,
-			float64(time.Since(start)/1_000_000_000))
+			float64(time.Since(start))/1e9)
 		start = time.Now()
 		last = norm
 		params = newParams
