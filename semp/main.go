@@ -375,7 +375,6 @@ func NumJac(names []string, geoms [][]float64,
 			col++
 		}
 	}
-	DumpMat(jac)
 	return jac
 }
 
@@ -519,12 +518,15 @@ func main() {
 	energies := Relative(baseEnergies)
 	norm := Norm(ai, energies) * htToCm
 	var iter int
-	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
+	var last float64
+	fmt.Printf("%17s\n", "(cm-1)")
+	fmt.Printf("%5s%12s%12s\n", "Iter", "Norm", "Delta")
+	fmt.Printf("%5d%12.4f%12.4f\n", iter, norm, norm-last)
 	iter++
+	last = norm
 	// END initial Norm
 
 	// BEGIN first step
-	// var last float64
 	for i := 0; i < MAXIT && norm > THRESH; i++ {
 		jac := NumJac(labels, geoms, params, baseEnergies)
 		newParams := LevMar(jac, ai, energies, params)
@@ -540,8 +542,9 @@ func main() {
 		// } else {
 		// 	LAMBDA *= NU
 		// }
-		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
+		fmt.Printf("%5d%12.4f%12.4f\n", iter, norm, norm-last)
 		iter++
+		last = norm
 		params = newParams
 	}
 }
