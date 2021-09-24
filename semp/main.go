@@ -190,12 +190,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 	return
 }
 
-func DumpParams(params []Param, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
+func WriteParams(params []Param, f io.Writer) {
 	for _, param := range params {
 		fmt.Fprintf(f, " ****\n%2s", param.Atom)
 		var last, sep string
@@ -216,6 +211,20 @@ func DumpParams(params []Param, filename string) {
 		fmt.Fprint(f, "\n")
 	}
 	fmt.Fprint(f, " ****\n\n")
+}
+
+func LogParams(w io.Writer, params []Param, iter int) {
+	fmt.Fprintln(w, "Iter %5d\n", iter)
+	WriteParams(params, w)
+}
+
+func DumpParams(params []Param, filename string) {
+	f, err := os.Create(filename)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	WriteParams(params, f)
 }
 
 var (
@@ -347,17 +356,6 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []
 	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
 }
 
-// func ForwardDiff(names []string, geoms [][]float64,
-// 	params []Param, p, i int, energies *mat.Dense) []float64 {
-// 	base := energies.RawMatrix().Data
-// 	params[p].Values[i] += DELTA
-// 	DumpParams(params, "params.dat")
-// 	forward := SEnergy(".", names, geoms, "params.dat")
-
-// 	// f'(x) ~ [ f(x+h) - f(x) ] / h ; where h is DELTA here
-// 	return Scale(1/DELTA, Sub(forward, base))
-// }
-
 // NumJac computes the numerical Jacobian of energies vs params
 func NumJac(names []string, geoms [][]float64,
 	params []Param, energies *mat.Dense) *mat.Dense {
@@ -368,7 +366,6 @@ func NumJac(names []string, geoms [][]float64,
 	for p := range params {
 		for i := range params[p].Values {
 			data := CentralDiff(names, geoms, params, p, i)
-			// data := ForwardDiff(names, geoms, params, p, i, energies)
 			jac.SetCol(col, data)
 			fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 				params[p].Names[i], params[p].Atom)
@@ -387,20 +384,6 @@ func Relative(a *mat.Dense) *mat.Dense {
 	ret := mat.NewDense(r, c, nil)
 	for i := 0; i < r; i++ {
 		ret.Set(i, 0, a.At(i, 0)-min)
-	}
-	return ret
-}
-
-func SlRelative(a []float64) []float64 {
-	ret := make([]float64, len(a))
-	min := a[0]
-	for _, i := range a {
-		if i < min {
-			min = i
-		}
-	}
-	for i := range a {
-		ret[i] = a[i] - min
 	}
 	return ret
 }
@@ -433,6 +416,14 @@ func DumpMat(m mat.Matrix) {
 	fmt.Print("\n")
 }
 
+func Identity(n int) *mat.Dense {
+	ret := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		ret.Set(i, i, 1.0)
+	}
+	return ret
+}
+
 func UpdateParams(params []Param, v *mat.Dense) []Param {
 	ret := make([]Param, 0, len(params))
 	var i int
@@ -447,14 +438,6 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 			Names:  p.Names,
 			Values: vals,
 		})
-	}
-	return ret
-}
-
-func Identity(n int) *mat.Dense {
-	ret := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		ret.Set(i, i, 1.0)
 	}
 	return ret
 }
@@ -507,44 +490,40 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 	LOGFILE, _ = os.Create("log")
+	paramLog, _ := os.Create("params.log")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	ai := LoadEnergies("rel.dat")
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
 	DumpParams(params, "params.dat")
-	// BEGIN initial Norm
 	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
-	energies := Relative(baseEnergies)
-	norm := Norm(ai, energies) * htToCm
-	var iter int
-	var last float64
-	fmt.Printf("%17s\n", "(cm-1)")
-	fmt.Printf("%5s%12s%12s\n", "Iter", "Norm", "Delta")
-	fmt.Printf("%5d%12.4f%12.4f\n", iter, norm, norm-last)
+	se := Relative(baseEnergies)
+	norm := Norm(ai, se) * htToCm
+	var (
+		iter int
+		last float64
+	)
+	fmt.Printf("%17s%12s%12s\n", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s\n", "Iter", "Norm", "Delta", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12d\n", iter, norm, norm-last, 0)
+	LogParams(paramLog, params, iter)
 	iter++
 	last = norm
-	// END initial Norm
-
-	// BEGIN first step
+	start := time.Now()
 	for i := 0; i < MAXIT && norm > THRESH; i++ {
 		jac := NumJac(labels, geoms, params, baseEnergies)
-		newParams := LevMar(jac, ai, energies, params)
+		newParams := LevMar(jac, ai, se, params)
 		DumpParams(newParams, "params.dat")
-		energies = PLSEnergy(".", labels, geoms, "params.dat")
-		energies = Relative(energies)
-		norm = Norm(ai, energies) * htToCm
-		// this is not really a proper implementation of
-		// levmar, need to try the different values instead,
-		// but it's worth trying I think
-		// if norm < last {
-		// 	LAMBDA /= NU
-		// } else {
-		// 	LAMBDA *= NU
-		// }
-		fmt.Printf("%5d%12.4f%12.4f\n", iter, norm, norm-last)
-		iter++
+		se = PLSEnergy(".", labels, geoms, "params.dat")
+		se = Relative(se)
+		norm = Norm(ai, se) * htToCm
+		fmt.Printf("%5d%12.4f%12.4f%12d\n",
+			iter, norm, norm-last, time.Since(start)/1_000_000_000)
+		start = time.Now()
 		last = norm
 		params = newParams
+		LogParams(paramLog, params, iter)
+		iter++
 	}
 }
