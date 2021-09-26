@@ -25,12 +25,6 @@ const (
 	htToCm = 219_474.5459784
 	EPS    = 1e-14
 	THRESH = 1.0
-	MAXIT  = 100
-)
-
-var (
-	// adjustable params for levmar
-	LAMBDA = 0.0e-2
 	NU     = 2.0
 )
 
@@ -62,6 +56,9 @@ var (
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
+	gauss      = flag.String("gauss", "g16", "command to run gaussian")
+	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
+	maxit      = flag.Int("maxit", 100, "maximum iterations")
 )
 
 type Param struct {
@@ -189,12 +186,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 	return
 }
 
-func DumpParams(params []Param, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
+func WriteParams(params []Param, f io.Writer) {
 	for _, param := range params {
 		fmt.Fprintf(f, " ****\n%2s", param.Atom)
 		var last, sep string
@@ -215,6 +207,20 @@ func DumpParams(params []Param, filename string) {
 		fmt.Fprint(f, "\n")
 	}
 	fmt.Fprint(f, " ****\n\n")
+}
+
+func LogParams(w io.Writer, params []Param, iter int) {
+	fmt.Fprintf(w, "Iter %5d\n", iter)
+	WriteParams(params, w)
+}
+
+func DumpParams(params []Param, filename string) {
+	f, err := os.Create(filename)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	WriteParams(params, f)
 }
 
 var (
@@ -255,7 +261,7 @@ func RunGaussian(dir string, names []string,
 	geom []float64, paramfile string) (ret float64) {
 	var input bytes.Buffer
 	WriteCom(&input, names, geom, paramfile)
-	cmd := exec.Command("g16")
+	cmd := exec.Command(*gauss)
 	cmd.Dir = dir
 	cmd.Stdin = &input
 	var r io.Reader
@@ -263,6 +269,8 @@ func RunGaussian(dir string, names []string,
 	if *debug {
 		outfile, _ := os.Create(fmt.Sprintf("debug/output%d.com", counter-1))
 		r = io.TeeReader(r, outfile)
+		errfile, _ := os.Create(fmt.Sprintf("debug/output%d.err", counter-1))
+		cmd.Stderr = errfile
 	}
 	err := cmd.Start()
 	// actually release the resources for a command
@@ -344,17 +352,6 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []
 	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
 }
 
-// func ForwardDiff(names []string, geoms [][]float64,
-// 	params []Param, p, i int, energies *mat.Dense) []float64 {
-// 	base := energies.RawMatrix().Data
-// 	params[p].Values[i] += DELTA
-// 	DumpParams(params, "params.dat")
-// 	forward := SEnergy(".", names, geoms, "params.dat")
-
-// 	// f'(x) ~ [ f(x+h) - f(x) ] / h ; where h is DELTA here
-// 	return Scale(1/DELTA, Sub(forward, base))
-// }
-
 // NumJac computes the numerical Jacobian of energies vs params
 func NumJac(names []string, geoms [][]float64,
 	params []Param, energies *mat.Dense) *mat.Dense {
@@ -365,7 +362,6 @@ func NumJac(names []string, geoms [][]float64,
 	for p := range params {
 		for i := range params[p].Values {
 			data := CentralDiff(names, geoms, params, p, i)
-			// data := ForwardDiff(names, geoms, params, p, i, energies)
 			jac.SetCol(col, data)
 			fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 				params[p].Names[i], params[p].Atom)
@@ -384,20 +380,6 @@ func Relative(a *mat.Dense) *mat.Dense {
 	ret := mat.NewDense(r, c, nil)
 	for i := 0; i < r; i++ {
 		ret.Set(i, 0, a.At(i, 0)-min)
-	}
-	return ret
-}
-
-func SlRelative(a []float64) []float64 {
-	ret := make([]float64, len(a))
-	min := a[0]
-	for _, i := range a {
-		if i < min {
-			min = i
-		}
-	}
-	for i := range a {
-		ret[i] = a[i] - min
 	}
 	return ret
 }
@@ -430,13 +412,21 @@ func DumpMat(m mat.Matrix) {
 	fmt.Print("\n")
 }
 
-func UpdateParams(params []Param, v *mat.Dense) []Param {
+func Identity(n int) *mat.Dense {
+	ret := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		ret.Set(i, i, 1.0)
+	}
+	return ret
+}
+
+func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	ret := make([]Param, 0, len(params))
 	var i int
 	for _, p := range params {
 		vals := make([]float64, 0, len(p.Values))
 		for _, val := range p.Values {
-			vals = append(vals, val+v.At(i, 0))
+			vals = append(vals, val+v.At(i, 0)*scale)
 			i++
 		}
 		ret = append(ret, Param{
@@ -448,22 +438,14 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 	return ret
 }
 
-func Identity(n int) *mat.Dense {
-	ret := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		ret.Set(i, i, 1.0)
-	}
-	return ret
-}
-
-func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	// LHS
 	var prod mat.Dense
 	prod.Mul(jac.T(), jac)
 	r, _ := prod.Dims()
 	eye := Identity(r)
 	var Leye mat.Dense
-	Leye.Scale(LAMBDA, eye)
+	Leye.Scale(*lambda, eye)
 	var sum mat.Dense
 	sum.Add(&prod, &Leye)
 	// RHS
@@ -486,12 +468,14 @@ func LevMar(jac, ai, se *mat.Dense, params []Param) []Param {
 		DumpVec(&step)
 		panic(err)
 	}
-	return UpdateParams(params, &step)
+	return UpdateParams(params, &step, scale)
 }
 
 func main() {
-	fmt.Println(os.Hostname())
+	host, _ := os.Hostname()
 	flag.Parse()
+	fmt.Printf("running with %d cpus on host: %s\n", *ncpus, host)
+	fmt.Printf("initial lambda: %.14f\n", *lambda)
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
@@ -504,40 +488,77 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 	LOGFILE, _ = os.Create("log")
+	paramLog, _ := os.Create("params.log")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	ai := LoadEnergies("rel.dat")
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
 	DumpParams(params, "params.dat")
-	// BEGIN initial Norm
 	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
-	energies := Relative(baseEnergies)
-	norm := Norm(ai, energies) * htToCm
-	var iter int
-	fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
+	se := Relative(baseEnergies)
+	norm := Norm(ai, se) * htToCm
+	var (
+		iter int
+		last float64
+	)
+	fmt.Printf("%17s%12s%12s\n", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s\n", "Iter", "Norm", "Delta", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12.1f\n", iter, norm, norm-last, 0.0)
+	LogParams(paramLog, params, iter)
 	iter++
-	// END initial Norm
-
-	// BEGIN first step
-	// var last float64
-	for i := 0; i < MAXIT && norm > THRESH; i++ {
+	last = norm
+	start := time.Now()
+	for iter < *maxit && norm > THRESH {
 		jac := NumJac(labels, geoms, params, baseEnergies)
-		newParams := LevMar(jac, ai, energies, params)
+		*lambda /= NU
+		// BEGIN copy-paste
+		newParams := LevMar(jac, ai, se, params, 1.0)
 		DumpParams(newParams, "params.dat")
-		energies = PLSEnergy(".", labels, geoms, "params.dat")
-		energies = Relative(energies)
-		norm = Norm(ai, energies) * htToCm
-		// this is not really a proper implementation of
-		// levmar, need to try the different values instead,
-		// but it's worth trying I think
-		// if norm < last {
-		// 	LAMBDA /= NU
-		// } else {
-		// 	LAMBDA *= NU
-		// }
-		fmt.Printf("Norm %5d: %20.4f cm-1\n", iter, norm)
-		iter++
+		se = PLSEnergy(".", labels, geoms, "params.dat")
+		se = Relative(se)
+		norm = Norm(ai, se) * htToCm
+		// END copy-paste
+
+		// case ii. and iii. of levmar, first case is ii. from
+		// Marquardt63
+		var bad bool
+		for i := 0; norm > last; i++ {
+			*lambda *= NU
+			newParams := LevMar(jac, ai, se, params, 1.0)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE,
+				"\tλ_%d to %g\n", i, *lambda)
+			if *lambda > 1.0 {
+				// case iii. failed, try footnote
+				bad = true
+				*lambda *= math.Pow(NU, float64(-(i + 1)))
+				break
+			}
+		}
+		var prev float64
+		// just break if decreasing k doesnt change the norm
+		for i := 2; bad && norm > last && norm-prev > 1e-6; i++ {
+			k := 1.0 / float64(int(1)<<i)
+			newParams := LevMar(jac, ai, se, params, k)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
+				i, k, norm-last)
+			prev = norm
+		}
+		fmt.Printf("%5d%12.4f%12.4f%12.1f\n",
+			iter, norm, norm-last,
+			float64(time.Since(start))/1e9)
+		start = time.Now()
+		last = norm
 		params = newParams
+		LogParams(paramLog, params, iter)
+		iter++
 	}
 }

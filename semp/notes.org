@@ -18,6 +18,42 @@ the jacobian.
 
 * TODO make ν iteration capped at an int instead of arbitrary 1.0
 
+* TODO THRESH and precision of delta printing should probably match up
+
+* running once with 10 maxit to collect a profile and then turning loose for the weekend
+
+* eland timing
+  | Jobs | CPUs | ncpus | Time/Iter |
+  |------+------+-------+-----------|
+  |   24 |   12 |    12 |      79.3 |
+  |   24 |   24 |    24 |        51 |
+  |   24 |   24 |    48 |        50 |
+  |   24 |   48 |    48 |           |
+  |   24 |   48 |    96 |        48 |
+
+* eland
+  - actual number of cpus is CPU(s)/thread(s) per core
+  - 45 sec/iter for 24 cpus and 24 jobs
+
+* WAIT check footnote 3 of marquardt63
+  - tried this, but not really working, maybe my function for K isn't
+    right
+  - if λ gets too large, you can formulate case iii differently
+  - λ is getting very large, probably cut it off and try footnote at 1
+
+* λ = 1e8 works pretty nicely as a constant it seems
+  - only let it go 3 iterations but it was working nicely
+
+* case ii. and iii. of levmar are the same
+  - if ϕ(λ/ν) <= last is case i.
+  - since I already divided once, I have to multiply to try the old
+    value of λ, so just keep multiplying in a loop to get case iii.
+
+* IDEA try just decreasing step size when difference between steps is small
+  - like less than threshold small, that should signal we need to be
+    more careful
+>>>>>>> 2416aaf2add5be7d5e3b16c1f390ea531a3b278a
+
 * version with constant lambda converged smoothly down to ~30 cm-1
   [[pdf:/home/brent/Library/Marquardt63.pdf][Actual lambda definitions from Marquardt, page 8]]
   - but then it got stuck
