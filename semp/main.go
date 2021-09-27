@@ -392,6 +392,26 @@ func Norm(a, b *mat.Dense) float64 {
 	return mat.Norm(&diff, 2)
 }
 
+func RMSD(a, b *mat.Dense) (ret float64) {
+	as := a.RawMatrix().Data
+	bs := b.RawMatrix().Data
+	if len(as) != len(bs) {
+		panic("dimension mismatch")
+	}
+	var count int
+	for i := range as {
+		// deviation
+		diff := as[i] - bs[i]
+		// square
+		ret += diff * diff
+		count++
+	}
+	// mean
+	ret /= float64(count)
+	// root
+	return math.Sqrt(ret)
+}
+
 func DumpVec(a *mat.Dense) {
 	r, c := a.Dims()
 	if c != 1 {
@@ -512,16 +532,20 @@ func main() {
 	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
 	se := Relative(baseEnergies)
 	norm := Norm(ai, se) * htToCm
+	rmsd := RMSD(ai, se) * htToCm
 	var (
-		iter int
-		last float64
+		iter     int
+		lastNorm float64
+		lastRMSD float64
 	)
 	fmt.Printf("%17s%12s%12s\n", "cm-1", "cm-1", "s")
-	fmt.Printf("%5s%12s%12s%12s\n", "Iter", "Norm", "Delta", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12.1f\n", iter, norm, norm-last, 0.0)
+	fmt.Printf("%5s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "Delta", "RMSD", "Delta", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, 0.0)
 	LogParams(paramLog, params, iter)
 	iter++
-	last = norm
+	lastNorm = norm
 	start := time.Now()
 	for iter < *maxit && norm > THRESH {
 		jac := NumJac(labels, geoms, params, baseEnergies)
@@ -537,7 +561,7 @@ func main() {
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
 		var bad bool
-		for i := 0; norm > last; i++ {
+		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
 			DumpParams(newParams, "params.dat")
@@ -556,22 +580,24 @@ func main() {
 		}
 		var prev float64
 		// just break if decreasing k doesnt change the norm
-		for i := 2; bad && norm > last && norm-prev > 1e-6; i++ {
+		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
 			k := 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "params.dat")
 			se = PLSEnergy(".", labels, geoms, "params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
+			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
-				i, k, norm-last)
+				i, k, norm-lastNorm)
 			prev = norm
 		}
-		fmt.Printf("%5d%12.4f%12.4f%12.1f\n",
-			iter, norm, norm-last,
+		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+			iter, norm, norm-lastNorm, rmsd, lastRMSD,
 			float64(time.Since(start))/1e9)
 		start = time.Now()
-		last = norm
+		lastNorm = norm
+		lastRMSD = rmsd
 		params = newParams
 		LogParams(paramLog, params, iter)
 		iter++
