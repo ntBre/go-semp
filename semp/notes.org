@@ -16,6 +16,11 @@ input, give it to g16 and parse the output for the energy. The
 energies for each geometry for a given parameter set give a column in
 the jacobian.
 
+* TODO maybe save the relative energies to a file on each iteration
+  - would be nice now to compute the rmsd and in general for running
+    the tail end of the qff after
+  - energies.log or dat or something
+
 * TODO make ν iteration capped at an int instead of arbitrary 1.0
 
 * TODO THRESH and precision of delta printing should probably match up
@@ -52,7 +57,6 @@ the jacobian.
 * IDEA try just decreasing step size when difference between steps is small
   - like less than threshold small, that should signal we need to be
     more careful
->>>>>>> 2416aaf2add5be7d5e3b16c1f390ea531a3b278a
 
 * version with constant lambda converged smoothly down to ~30 cm-1
   [[pdf:/home/brent/Library/Marquardt63.pdf][Actual lambda definitions from Marquardt, page 8]]
