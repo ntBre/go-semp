@@ -556,6 +556,7 @@ func main() {
 		se = PLSEnergy(".", labels, geoms, "params.dat")
 		se = Relative(se)
 		norm = Norm(ai, se) * htToCm
+		rmsd = RMSD(ai, se) * htToCm
 		// END copy-paste
 
 		// case ii. and iii. of levmar, first case is ii. from
