@@ -538,9 +538,10 @@ func main() {
 		lastNorm float64
 		lastRMSD float64
 	)
-	fmt.Printf("%17s%12s%12s\n", "cm-1", "cm-1", "s")
+	fmt.Printf("%17s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "s")
 	fmt.Printf("%5s%12s%12s%12s%12s%12s\n",
-		"Iter", "Norm", "Delta", "RMSD", "Delta", "Time")
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Time")
 	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
 		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, 0.0)
 	LogParams(paramLog, params, iter)
