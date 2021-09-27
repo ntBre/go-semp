@@ -49,3 +49,12 @@
 (defparameter b3lyp (list 3191.2 3154.6 1546.6 1197.3 1027.5 966.5 868.0 820.6 767.6))
 (defparameter semp (list 3216.3 3187.4 1663.2 1171.3 1048.0 924.9 877.4 850.2 802.0))
 (defparameter true (list 3142.6 3120.8 1600.9 1278.8 1061.5 970.2 886.4 878.6 787.4))
+
+(defun rel-diff (a b)
+  "Compute the difference between the elements of A and B relative to B"
+  (mapcar #'(lambda (x y) (/ (- x y) y)) a b))
+
+(defun pct-rel-diff (a b)
+  "Compute the percent difference between the elements of A and B
+relative to B"
+  (mapcar #'(lambda (x) (* 100 x)) (rel-diff a b)))

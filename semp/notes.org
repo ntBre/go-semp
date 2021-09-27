@@ -34,7 +34,7 @@ the jacobian.
   |------+--------------+--------+--------+-----------|
   |  AVG |         20.8 |   -1.5 |        |         - |
   |  MAE |         39.1 |   46.8 |        |         - |
-
+  | MA%E |         3.02 |   3.20 |        |         - |
 
 * TODO maybe save the relative energies to a file on each iteration
   - would be nice now to compute the rmsd and in general for running
