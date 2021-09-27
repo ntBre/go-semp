@@ -59,6 +59,8 @@ var (
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
 	maxit      = flag.Int("maxit", 100, "maximum iterations")
+	one        = flag.String("one", "", "run one iteration using the "+
+		"params in params.dat and save the results in the argument")
 )
 
 type Param struct {
@@ -471,6 +473,14 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	return UpdateParams(params, &step, scale)
 }
 
+func OneIter(labels []string, geoms [][]float64, paramfile, outfile string) {
+	se := Relative(PLSEnergy(".", labels, geoms, paramfile))
+	out, _ := os.Create(outfile)
+	for _, s := range se.RawMatrix().Data {
+		fmt.Fprintf(out, "%20.12f\n", s)
+	}
+}
+
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
@@ -487,10 +497,14 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	LOGFILE, _ = os.Create("log")
-	paramLog, _ := os.Create("params.log")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
+	if *one != "" {
+		OneIter(labels, geoms, "params.dat", *one)
+		os.Exit(0)
+	}
+	LOGFILE, _ = os.Create("log")
+	paramLog, _ := os.Create("params.log")
 	ai := LoadEnergies("rel.dat")
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
