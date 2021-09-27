@@ -40,7 +40,7 @@ var (
 		"DCore":  {},
 		"EHeat":  {},
 		"DipHyp": {},
-		"GCore":  {},
+		// "GCore":  {},
 	}
 	CHARGE = 0
 	SPIN   = 1
@@ -546,7 +546,8 @@ func main() {
 			norm = Norm(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE,
 				"\tλ_%d to %g\n", i, *lambda)
-			if *lambda > 1.0 {
+			// give up after 5 increases
+			if i > 4 {
 				// case iii. failed, try footnote
 				bad = true
 				*lambda *= math.Pow(NU, float64(-(i + 1)))
