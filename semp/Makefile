@@ -9,5 +9,8 @@ files :
 deploy: semp
 	scp -C semp $(DEST)
 
+eland: semp
+	scp -C semp 'eland:semp/.'
+
 clean:
 	rm -f params.dat out

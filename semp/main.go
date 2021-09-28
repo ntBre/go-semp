@@ -547,6 +547,7 @@ func main() {
 	LogParams(paramLog, params, iter)
 	iter++
 	lastNorm = norm
+	lastRMSD = rmsd
 	start := time.Now()
 	for iter < *maxit && norm > THRESH {
 		jac := NumJac(labels, geoms, params, baseEnergies)
@@ -570,6 +571,7 @@ func main() {
 			se = PLSEnergy(".", labels, geoms, "params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
+			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE,
 				"\tλ_%d to %g\n", i, *lambda)
 			// give up after 5 increases
