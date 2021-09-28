@@ -597,7 +597,7 @@ func main() {
 			prev = norm
 		}
 		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-			iter, norm, norm-lastNorm, rmsd, lastRMSD,
+			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD,
 			float64(time.Since(start))/1e9)
 		start = time.Now()
 		lastNorm = norm
