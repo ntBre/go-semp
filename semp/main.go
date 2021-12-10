@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -276,7 +277,7 @@ type Job struct {
 func RunGaussian(i int, dir string, names []string, geom []float64,
 	paramfile string) (job Job) {
 	// make file
-	basename := fmt.Sprintf("job.%05d", i)
+	basename := filepath.Join(dir, fmt.Sprintf("job.%05d", i))
 	comfile := basename + ".com"
 	pbsfile := basename + ".pbs"
 	input, err := os.Create(comfile)
@@ -291,7 +292,7 @@ func RunGaussian(i int, dir string, names []string, geom []float64,
 		panic(err)
 	}
 	// submit
-	WritePBS(pbs, basename, comfile)
+	WritePBS(pbs, filepath.Base(basename), filepath.Base(comfile))
 	jobid := Submit(pbsfile)
 	// return Job
 	return Job{
@@ -342,18 +343,19 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) *m
 			}
 		}
 		time.Sleep(1 * time.Second)
+		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(jobs))
 	}
 	return mat.NewDense(len(ret), 1, ret)
 }
 
 func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
 	params[p].Values[i] += DELTA
-	DumpParams(params, "params.dat")
-	forward := SEnergy(".", names, geoms, "params.dat")
+	DumpParams(params, "forward/params.dat")
+	forward := SEnergy("forward", names, geoms, "forward/params.dat")
 
 	params[p].Values[i] -= 2 * DELTA
-	DumpParams(params, "params.dat")
-	backward := SEnergy(".", names, geoms, "params.dat")
+	DumpParams(params, "backward/params.dat")
+	backward := SEnergy("backward", names, geoms, "backward/params.dat")
 
 	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
 	var diff mat.Dense
@@ -501,10 +503,19 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 }
 
 func OneIter(labels []string, geoms [][]float64, paramfile, outfile string) {
-	se := Relative(SEnergy(".", labels, geoms, paramfile))
+	se := Relative(SEnergy("base", labels, geoms, paramfile))
 	out, _ := os.Create(outfile)
 	for _, s := range se.RawMatrix().Data {
 		fmt.Fprintf(out, "%20.12f\n", s)
+	}
+}
+
+// MaybeMkdir makes directory name if it doesn't already exist
+func MaybeMkdir(name string) {
+	err := os.Mkdir(name, 0755)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		fmt.Printf("%#+v\n", err)
+		panic(err)
 	}
 }
 
@@ -516,6 +527,9 @@ func main() {
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
+	MaybeMkdir("base")
+	MaybeMkdir("forward")
+	MaybeMkdir("backward")
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -535,8 +549,8 @@ func main() {
 	ai := LoadEnergies("rel.dat")
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
-	DumpParams(params, "params.dat")
-	baseEnergies := SEnergy(".", labels, geoms, "params.dat")
+	DumpParams(params, "base/params.dat")
+	baseEnergies := SEnergy("base", labels, geoms, "base/params.dat")
 	se := Relative(baseEnergies)
 	norm := Norm(ai, se) * htToCm
 	rmsd := RMSD(ai, se) * htToCm
@@ -561,8 +575,8 @@ func main() {
 		*lambda /= NU
 		// BEGIN copy-paste
 		newParams := LevMar(jac, ai, se, params, 1.0)
-		DumpParams(newParams, "params.dat")
-		se = SEnergy(".", labels, geoms, "params.dat")
+		DumpParams(newParams, "base/params.dat")
+		se = SEnergy("base", labels, geoms, "base/params.dat")
 		se = Relative(se)
 		norm = Norm(ai, se) * htToCm
 		rmsd = RMSD(ai, se) * htToCm
@@ -574,8 +588,8 @@ func main() {
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
-			DumpParams(newParams, "params.dat")
-			se = SEnergy(".", labels, geoms, "params.dat")
+			DumpParams(newParams, "base/params.dat")
+			se = SEnergy("base", labels, geoms, "base/params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm
@@ -594,8 +608,8 @@ func main() {
 		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
 			k := 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
-			DumpParams(newParams, "params.dat")
-			se = SEnergy(".", labels, geoms, "params.dat")
+			DumpParams(newParams, "base/params.dat")
+			se = SEnergy("base", labels, geoms, "base/params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm

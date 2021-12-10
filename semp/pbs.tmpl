@@ -2,7 +2,7 @@
 #SBATCH --job-name={{.Name}}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o /dev/null
+#SBATCH -o {{.Name}}.pbs.out
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 

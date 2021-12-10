@@ -1,6 +1,6 @@
 DEST = 'woods:semp/testing/.'
 
-semp : main.go utils.go
+semp : main.go utils.go pbs.go
 	go build .
 
 files :

@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/template"
 )
@@ -29,11 +31,16 @@ func WritePBS(w io.Writer, name, infile string) {
 }
 
 func Submit(filename string) string {
-	cmd, err := exec.Command("sbatch", filename).Output()
+	dir := filepath.Dir(filename)
+	base := filepath.Base(filename)
+	cmd := exec.Command("sbatch", base)
+	cmd.Dir = dir
+	byts, err := cmd.Output()
 	if err != nil {
+		fmt.Println("the error is : ", cmd.String())
 		panic(err)
 	}
 	// output like "Submitted batch job 49229449"
-	fields := strings.Fields(string(cmd))
+	fields := strings.Fields(string(byts))
 	return fields[3]
 }
