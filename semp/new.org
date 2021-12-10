@@ -1,5 +1,0 @@
-* Timing
-  | Name         | Time   |
-  |--------------+--------|
-  | Just Working | 22m28s |
-  |              |        |
