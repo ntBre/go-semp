@@ -2,20 +2,18 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime/pprof"
 	"strconv"
 	"strings"
-	"sync"
 	"text/template"
 	"time"
-
-	"os/exec"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -51,7 +49,7 @@ var (
 	LOGFILE io.Writer
 )
 
-// Flags
+/// Flags
 var (
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
@@ -61,6 +59,12 @@ var (
 	maxit      = flag.Int("maxit", 100, "maximum iterations")
 	one        = flag.String("one", "", "run one iteration using the "+
 		"params in params.dat and save the results in the argument")
+)
+
+/// Errors
+var (
+	ErrEnergyNotFound = errors.New("Energy not found in Gaussian output")
+	ErrFileNotFound   = errors.New("Output file not found")
 )
 
 type Param struct {
@@ -245,12 +249,16 @@ the title
 	if err != nil {
 		panic(err)
 	}
+	path, err := filepath.Abs(paramfile)
+	if err != nil {
+		panic(err)
+	}
 	anon := struct {
 		Charge int
 		Spin   int
 		Geom   string
 		Params string
-	}{CHARGE, SPIN, geom, paramfile}
+	}{CHARGE, SPIN, geom, path}
 	if *debug {
 		f, _ := os.Create(fmt.Sprintf("debug/file%d.com", counter))
 		counter++
@@ -259,82 +267,81 @@ the title
 	t.Execute(w, anon)
 }
 
-func RunGaussian(dir string, names []string,
-	geom []float64, paramfile string) (ret float64) {
-	var input bytes.Buffer
-	WriteCom(&input, names, geom, paramfile)
-	cmd := exec.Command(*gauss)
-	cmd.Dir = dir
-	cmd.Stdin = &input
-	var r io.Reader
-	r, _ = cmd.StdoutPipe()
-	if *debug {
-		outfile, _ := os.Create(fmt.Sprintf("debug/output%d.com", counter-1))
-		r = io.TeeReader(r, outfile)
-		errfile, _ := os.Create(fmt.Sprintf("debug/output%d.err", counter-1))
-		cmd.Stderr = errfile
+type Job struct {
+	Filename string
+	Index    int
+	Jobid    string
+}
+
+func RunGaussian(i int, dir string, names []string, geom []float64,
+	paramfile string) (job Job) {
+	// make file
+	basename := fmt.Sprintf("job.%05d", i)
+	comfile := basename + ".com"
+	pbsfile := basename + ".pbs"
+	input, err := os.Create(comfile)
+	defer input.Close()
+	if err != nil {
+		panic(err)
 	}
-	err := cmd.Start()
-	// actually release the resources for a command
-	defer cmd.Wait()
-	for i := 3; err != nil && i > 0; i-- {
-		fmt.Printf("error running %s, sleeping\n", cmd.String())
-		time.Sleep(60 * time.Second)
+	WriteCom(input, names, geom, paramfile)
+	pbs, err := os.Create(pbsfile)
+	defer pbs.Close()
+	if err != nil {
+		panic(err)
 	}
-	scanner := bufio.NewScanner(r)
-	var found bool
+	// submit
+	WritePBS(pbs, basename, comfile)
+	jobid := Submit(pbsfile)
+	// return Job
+	return Job{
+		Filename: basename,
+		Index:    i,
+		Jobid:    jobid,
+	}
+}
+
+func ParseGaussian(filename string) (ret float64, err error) {
+	f, err := os.Open(filename)
+	defer f.Close()
+	if err != nil {
+		return ret, ErrFileNotFound
+	}
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		if strings.Contains(scanner.Text(), "SCF Done") {
 			fields := strings.Fields(scanner.Text())
-			// could return here, but need to shut down
-			// command
 			ret, err = strconv.ParseFloat(fields[4], 64)
 			if err != nil {
 				fmt.Printf("error parsing %q\n", fields)
 				panic(err)
 			}
-			found = true
+			return
 		}
 	}
-	if !found {
-		panic("energy not found in gaussian run")
-	}
-	return
-}
-
-// SEnergy returns the relative semi-empirical energies in Ht
-// corresponding to params
-func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
-	// parallel version, make sure the normal version works first
-	ret := make([]float64, len(geoms))
-	sema := make(chan struct{}, *ncpus)
-	var wg sync.WaitGroup
-	for i, geom := range geoms {
-		sema <- struct{}{}
-		wg.Add(1)
-		go func(dir string, names []string,
-			geom []float64, paramfile string, i int) {
-			defer func() {
-				<-sema
-				wg.Done()
-			}()
-			ret[i] = RunGaussian(dir, names, geom, paramfile)
-		}(dir, names, geom, paramfile, i)
-	}
-	wg.Wait()
-	return mat.NewDense(len(ret), 1, ret)
+	return ret, ErrEnergyNotFound
 }
 
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
 func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
 	ret := make([]float64, len(geoms))
+	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
-		ret[i] = RunGaussian(dir, names, geom, paramfile)
-		// hate to check this on every iteration
-		if *debug {
-			fmt.Printf("%5d%20.12f\n", i, ret[i])
+		jobs[i] = RunGaussian(i, dir, names, geom, paramfile)
+	}
+	for len(jobs) > 0 {
+		for i := 0; i < len(jobs); i++ {
+			job := jobs[i]
+			energy, err := ParseGaussian(job.Filename + ".out")
+			if err == nil {
+				ret[job.Index] = energy
+				l := len(jobs) - 1
+				jobs[l], jobs[i] = jobs[i], jobs[l]
+				jobs = jobs[:l]
+			}
 		}
+		time.Sleep(1 * time.Second)
 	}
 	return mat.NewDense(len(ret), 1, ret)
 }
@@ -342,11 +349,11 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) *m
 func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
 	params[p].Values[i] += DELTA
 	DumpParams(params, "params.dat")
-	forward := PLSEnergy(".", names, geoms, "params.dat")
+	forward := SEnergy(".", names, geoms, "params.dat")
 
 	params[p].Values[i] -= 2 * DELTA
 	DumpParams(params, "params.dat")
-	backward := PLSEnergy(".", names, geoms, "params.dat")
+	backward := SEnergy(".", names, geoms, "params.dat")
 
 	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
 	var diff mat.Dense
@@ -494,7 +501,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 }
 
 func OneIter(labels []string, geoms [][]float64, paramfile, outfile string) {
-	se := Relative(PLSEnergy(".", labels, geoms, paramfile))
+	se := Relative(SEnergy(".", labels, geoms, paramfile))
 	out, _ := os.Create(outfile)
 	for _, s := range se.RawMatrix().Data {
 		fmt.Fprintf(out, "%20.12f\n", s)
@@ -529,7 +536,7 @@ func main() {
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
 	DumpParams(params, "params.dat")
-	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
+	baseEnergies := SEnergy(".", labels, geoms, "params.dat")
 	se := Relative(baseEnergies)
 	norm := Norm(ai, se) * htToCm
 	rmsd := RMSD(ai, se) * htToCm
@@ -555,7 +562,7 @@ func main() {
 		// BEGIN copy-paste
 		newParams := LevMar(jac, ai, se, params, 1.0)
 		DumpParams(newParams, "params.dat")
-		se = PLSEnergy(".", labels, geoms, "params.dat")
+		se = SEnergy(".", labels, geoms, "params.dat")
 		se = Relative(se)
 		norm = Norm(ai, se) * htToCm
 		rmsd = RMSD(ai, se) * htToCm
@@ -568,7 +575,7 @@ func main() {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
 			DumpParams(newParams, "params.dat")
-			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = SEnergy(".", labels, geoms, "params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm
@@ -588,7 +595,7 @@ func main() {
 			k := 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "params.dat")
-			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = SEnergy(".", labels, geoms, "params.dat")
 			se = Relative(se)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm
