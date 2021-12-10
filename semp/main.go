@@ -351,8 +351,6 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []
 	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
 	var diff mat.Dense
 	diff.Sub(forward, backward)
-	fmt.Println(forward, backward)
-	os.Exit(1)
 	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
 }
 
