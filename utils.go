@@ -1,10 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"math"
+	"os"
 	"strconv"
 	"strings"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 const (
@@ -76,4 +81,34 @@ func MaybeMkdir(name string) {
 		fmt.Printf("%#+v\n", err)
 		panic(err)
 	}
+}
+
+func DumpVec(a *mat.Dense) {
+	r, c := a.Dims()
+	if c != 1 {
+		panic("more than one column in expected vector")
+	}
+	for i := 0; i < r; i++ {
+		fmt.Printf("%5d%20.12f\n", i, a.At(i, 0))
+	}
+}
+
+func DumpMat(m mat.Matrix) {
+	r, c := m.Dims()
+	for i := 0; i < r; i++ {
+		fmt.Printf("%5d", i)
+		for j := 0; j < c; j++ {
+			fmt.Printf("%12.8f", m.At(i, j))
+		}
+		fmt.Print("\n")
+	}
+	fmt.Print("\n")
+}
+
+func Identity(n int) *mat.Dense {
+	ret := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		ret.Set(i, i, 1.0)
+	}
+	return ret
 }

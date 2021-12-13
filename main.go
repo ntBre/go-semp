@@ -206,6 +206,7 @@ func ParseGaussian(filename string) (ret float64, err error) {
 // SEnergy returns the list of jobs needed to compute the desired
 // semi-empirical energies after writing all of the input files
 func SEnergy(dir string, names []string, geoms [][]float64, params []Param, dest *[]float64) []Job {
+	os.Mkdir("inp", 0755)
 	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
 		jobs[i] = RunGaussian(i, dir, names, geom, params)
@@ -218,11 +219,11 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []
 	lgeom := len(geoms)
 	params[p].Values[i] += DELTA
 	fwd := make([]float64, lgeom)
-	fwdJobs := SEnergy("forward", names, geoms, params, &fwd)
+	fwdJobs := SEnergy("inp", names, geoms, params, &fwd)
 
 	params[p].Values[i] -= 2 * DELTA
 	bwd := make([]float64, lgeom)
-	bwdJobs := SEnergy("backward", names, geoms, params, &bwd)
+	bwdJobs := SEnergy("inp", names, geoms, params, &bwd)
 
 	// have to restore the value
 	params[p].Values[i] += DELTA
@@ -254,78 +255,6 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 		}
 	}
 	return jac
-}
-
-func Relative(a *mat.Dense) *mat.Dense {
-	min := mat.Min(a)
-	r, c := a.Dims()
-	if c != 1 {
-		panic("too many columns")
-	}
-	ret := mat.NewDense(r, c, nil)
-	for i := 0; i < r; i++ {
-		ret.Set(i, 0, a.At(i, 0)-min)
-	}
-	return ret
-}
-
-// Norm computes the Euclidean norm between vectors a and b
-func Norm(a, b *mat.Dense) float64 {
-	var diff mat.Dense
-	diff.Sub(a, b)
-	return mat.Norm(&diff, 2)
-}
-
-// RMSD computes the root-mean-square deviation between vectors a and
-// b
-func RMSD(a, b *mat.Dense) (ret float64) {
-	as := a.RawMatrix().Data
-	bs := b.RawMatrix().Data
-	if len(as) != len(bs) {
-		panic("dimension mismatch")
-	}
-	var count int
-	for i := range as {
-		// deviation
-		diff := as[i] - bs[i]
-		// square
-		ret += diff * diff
-		count++
-	}
-	// mean
-	ret /= float64(count)
-	// root
-	return math.Sqrt(ret)
-}
-
-func DumpVec(a *mat.Dense) {
-	r, c := a.Dims()
-	if c != 1 {
-		panic("more than one column in expected vector")
-	}
-	for i := 0; i < r; i++ {
-		fmt.Printf("%5d%20.12f\n", i, a.At(i, 0))
-	}
-}
-
-func DumpMat(m mat.Matrix) {
-	r, c := m.Dims()
-	for i := 0; i < r; i++ {
-		fmt.Printf("%5d", i)
-		for j := 0; j < c; j++ {
-			fmt.Printf("%12.8f", m.At(i, j))
-		}
-		fmt.Print("\n")
-	}
-	fmt.Print("\n")
-}
-
-func Identity(n int) *mat.Dense {
-	ret := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		ret.Set(i, i, 1.0)
-	}
-	return ret
 }
 
 func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
@@ -381,6 +310,8 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 
 // RunJobs runs jobs and stores the results in the jobs' Targets
 func RunJobs(jobs []Job) {
+	// SEnergy makes the directory, this deletes it
+	defer os.RemoveAll("inp")
 	qstat := make(map[string]bool)
 	// initialize to true
 	for _, j := range jobs {
@@ -398,9 +329,7 @@ func RunJobs(jobs []Job) {
 				jobs[l], jobs[i] = jobs[i], jobs[l]
 				jobs = jobs[:l]
 			} else if !qstat[job.Jobid] {
-				// TODO actually resubmit
-				fmt.Printf("need to resubmit job %s\n",
-					job.Filename)
+				jobs[i].Jobid = Submit(job.Filename + ".pbs")
 			}
 		}
 		if shortened < 1 {
@@ -416,7 +345,7 @@ func RunJobs(jobs []Job) {
 func OneIter(labels []string, geoms [][]float64, params []Param, outfile string) {
 	l := len(geoms)
 	nrg := make([]float64, l)
-	jobs := SEnergy("base", labels, geoms, params, &nrg)
+	jobs := SEnergy("inp", labels, geoms, params, &nrg)
 	RunJobs(jobs)
 	se := Relative(mat.NewDense(l, 1, nrg))
 	out, _ := os.Create(outfile)
@@ -433,9 +362,6 @@ func main() {
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
-	MaybeMkdir("base")
-	MaybeMkdir("forward")
-	MaybeMkdir("backward")
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -457,7 +383,7 @@ func main() {
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
 	nrg := make([]float64, len(geoms))
-	jobs := SEnergy("base", labels, geoms, params, &nrg)
+	jobs := SEnergy("inp", labels, geoms, params, &nrg)
 	RunJobs(jobs)
 	se := Relative(mat.NewDense(len(geoms), 1, nrg))
 	norm := Norm(ai, se) * htToCm
@@ -483,7 +409,7 @@ func main() {
 		*lambda /= NU
 		// BEGIN copy-paste
 		newParams := LevMar(jac, ai, se, params, 1.0)
-		jobs = SEnergy("base", labels, geoms, newParams, &nrg)
+		jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
 		RunJobs(jobs)
 		se = Relative(mat.NewDense(len(geoms), 1, nrg))
 		norm = Norm(ai, se) * htToCm
@@ -496,7 +422,7 @@ func main() {
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
-			jobs = SEnergy("base", labels, geoms, newParams, &nrg)
+			jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
 			RunJobs(jobs)
 			se = Relative(mat.NewDense(len(geoms), 1, nrg))
 			norm = Norm(ai, se) * htToCm
@@ -516,8 +442,8 @@ func main() {
 		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
 			k := 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
-			DumpParams(newParams, "base/params.dat")
-			jobs = SEnergy("base", labels, geoms, newParams, &nrg)
+			DumpParams(newParams, "inp/params.dat")
+			jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
 			RunJobs(jobs)
 			se = Relative(mat.NewDense(len(geoms), 1, nrg))
 			norm = Norm(ai, se) * htToCm
