@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -73,125 +72,6 @@ type Param struct {
 	Atom   string
 	Names  []string
 	Values []float64
-}
-
-func LoadGeoms(filename string) (ret [][]float64) {
-	f, err := os.Open(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	scanner := bufio.NewScanner(f)
-	var line string
-	row := make([]float64, 0, 3)
-	scanner.Scan() // discard first "# GEOM" line
-	for scanner.Scan() {
-		line = scanner.Text()
-		if strings.Contains(line, "#") {
-			ret = append(ret, row)
-			row = make([]float64, 0, len(row))
-		} else {
-			fields := strings.Fields(line)
-			row = append(row, toFloat(fields)...)
-		}
-	}
-	ret = append(ret, row)
-	return
-}
-
-// LoadEnergies loads relative energies from filename and returns them
-// as a column vector
-func LoadEnergies(filename string) *mat.Dense {
-	ret := make([]float64, 0)
-	f, err := os.Open(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	scanner := bufio.NewScanner(f)
-	var line string
-	for scanner.Scan() {
-		line = scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) == 1 {
-			v, err := strconv.ParseFloat(fields[0], 64)
-			if err != nil {
-				panic(err)
-			}
-			ret = append(ret, v)
-		}
-	}
-	return mat.NewDense(len(ret), 1, ret)
-}
-
-func Equal(a, b float64) bool {
-	if math.Abs(a-b) > EPS {
-		return false
-	}
-	return true
-}
-
-// LoadParams extracts semi-empirical parameters from a Gaussian
-// output file
-func LoadParams(filename string) (ret []Param, num int) {
-	f, err := os.Open(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	scanner := bufio.NewScanner(f)
-	var (
-		line    string
-		fields  []string
-		first   bool
-		inparam bool
-		param   Param
-	)
-	for scanner.Scan() {
-		line = scanner.Text()
-		fields = strings.Fields(line)
-		switch {
-		case line == " ****":
-			inparam = true
-			first = true
-			if param.Atom != "" {
-				ret = append(ret, param)
-			}
-			param = Param{}
-		case inparam && line == " ":
-			inparam = false
-			return
-		case inparam && first:
-			param.Atom = fields[0]
-			first = false
-		case inparam:
-			for _, f := range fields {
-				split := strings.Split(f, "=")
-				if _, ok := DERIVED_PARAMS[split[0]]; ok {
-					continue
-				}
-				name := split[0]
-				vals := strings.Split(split[1], ",")
-				if name == "DCore" {
-					name += "=" + vals[0] + "," + vals[1]
-					vals = vals[2:]
-				}
-				for _, val := range vals {
-					v, err := strconv.ParseFloat(val, 64)
-					if err != nil {
-						panic(err)
-					}
-					// skip zero params for now
-					if v != 0.0 {
-						param.Names = append(param.Names, name)
-						param.Values = append(param.Values, v)
-						num++
-					}
-				}
-			}
-		}
-	}
-	return
 }
 
 func WriteParams(params []Param, f io.Writer) {
@@ -344,6 +224,9 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []
 	bwd := make([]float64, lgeom)
 	bwdJobs := SEnergy("backward", names, geoms, params, &bwd)
 
+	// have to restore the value
+	params[p].Values[i] += DELTA
+
 	jobs := append(fwdJobs, bwdJobs...)
 	RunJobs(jobs)
 	forward := mat.NewDense(lgeom, 1, fwd)
@@ -360,6 +243,7 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	cols := Len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
+	// these two loops are over params
 	for p := range params {
 		for i := range params[p].Values {
 			data := CentralDiff(names, geoms, params, p, i)
@@ -385,12 +269,15 @@ func Relative(a *mat.Dense) *mat.Dense {
 	return ret
 }
 
+// Norm computes the Euclidean norm between vectors a and b
 func Norm(a, b *mat.Dense) float64 {
 	var diff mat.Dense
 	diff.Sub(a, b)
 	return mat.Norm(&diff, 2)
 }
 
+// RMSD computes the root-mean-square deviation between vectors a and
+// b
 func RMSD(a, b *mat.Dense) (ret float64) {
 	as := a.RawMatrix().Data
 	bs := b.RawMatrix().Data
@@ -494,19 +381,35 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 
 // RunJobs runs jobs and stores the results in the jobs' Targets
 func RunJobs(jobs []Job) {
+	qstat := make(map[string]bool)
+	// initialize to true
+	for _, j := range jobs {
+		qstat[j.Jobid] = true
+	}
+	var shortened int
 	for len(jobs) > 0 {
 		for i := 0; i < len(jobs); i++ {
 			job := jobs[i]
 			energy, err := ParseGaussian(job.Filename + ".out")
 			if err == nil {
+				shortened++
 				(*job.Target)[job.Index] = energy
 				l := len(jobs) - 1
 				jobs[l], jobs[i] = jobs[i], jobs[l]
 				jobs = jobs[:l]
+			} else if !qstat[job.Jobid] {
+				// TODO actually resubmit
+				fmt.Printf("need to resubmit job %s\n",
+					job.Filename)
 			}
+		}
+		if shortened < 1 {
+			// check the queue if no jobs finish
+			Stat(&qstat)
 		}
 		time.Sleep(1 * time.Second)
 		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(jobs))
+		shortened = 0
 	}
 }
 
@@ -519,15 +422,6 @@ func OneIter(labels []string, geoms [][]float64, params []Param, outfile string)
 	out, _ := os.Create(outfile)
 	for _, s := range se.RawMatrix().Data {
 		fmt.Fprintf(out, "%20.12f\n", s)
-	}
-}
-
-// MaybeMkdir makes directory name if it doesn't already exist
-func MaybeMkdir(name string) {
-	err := os.Mkdir(name, 0755)
-	if err != nil && !errors.Is(err, fs.ErrExist) {
-		fmt.Printf("%#+v\n", err)
-		panic(err)
 	}
 }
 

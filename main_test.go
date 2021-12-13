@@ -25,7 +25,7 @@ func TestWritePBS(t *testing.T) {
 #SBATCH --job-name=the name
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o /dev/null
+#SBATCH -o the name.pbs.out
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 

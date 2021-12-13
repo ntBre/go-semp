@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -59,4 +60,20 @@ func toFloat(strs []string) []float64 {
 		}
 	}
 	return ret
+}
+
+func Equal(a, b float64) bool {
+	if math.Abs(a-b) > EPS {
+		return false
+	}
+	return true
+}
+
+// MaybeMkdir makes directory name if it doesn't already exist
+func MaybeMkdir(name string) {
+	err := os.Mkdir(name, 0755)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		fmt.Printf("%#+v\n", err)
+		panic(err)
+	}
 }
