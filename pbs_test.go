@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 )
 
@@ -33,6 +34,48 @@ func TestSubmit(t *testing.T) {
 	got := Submit("testfiles/file")
 	want := "12345678"
 	if got != want {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}
+
+func TestStat(t *testing.T) {
+	tmp := STAT_CMD
+	STAT_CMD = func() (string, []string) {
+		return "cat", []string{
+			"testfiles/squeue.dat",
+		}
+	}
+	defer func() {
+		STAT_CMD = tmp
+	}()
+	got := map[string]bool{
+		"51009181": true,
+		"51009182": true,
+		"51009183": true,
+		"51009184": true,
+		"51009185": true,
+		"51009191": true,
+		"51009194": true,
+		"51009203": true,
+		"51009208": true,
+		"51009210": true,
+		"51009211": true,
+	}
+	Stat(&got)
+	want := map[string]bool{
+		"51009181": true,
+		"51009182": true,
+		"51009183": true,
+		"51009184": true,
+		"51009185": true,
+		"51009191": true,
+		"51009194": true,
+		"51009203": true,
+		"51009208": true,
+		"51009210": true,
+		"51009211": false,
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

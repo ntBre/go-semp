@@ -7,11 +7,18 @@ import (
 	"strings"
 )
 
+var STAT_CMD = func() (string, []string) {
+	return "squeue", []string{
+		"-u", os.Getenv("USER"),
+	}
+}
+
 // Stat generates an updated map of job names to their queue
 // status. The map value is true if the job is either pending (PD),
 // queued (Q) or running (R) and false otherwise
 func Stat(qstat *map[string]bool) {
-	status, _ := exec.Command("squeue", "-u", os.Getenv("USER")).CombinedOutput()
+	name, args := STAT_CMD()
+	status, _ := exec.Command(name, args...).CombinedOutput()
 	scanner := bufio.NewScanner(strings.NewReader(string(status)))
 	var (
 		line   string
