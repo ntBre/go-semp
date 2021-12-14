@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime/pprof"
 	"strings"
 	"text/template"
@@ -22,6 +23,7 @@ const (
 	EPS    = 1e-14
 	THRESH = 1.0
 	NU     = 2.0
+	CHUNK  = 128
 )
 
 var (
@@ -110,10 +112,6 @@ func DumpParams(params []Param, filename string) {
 	WriteParams(f, params)
 }
 
-var (
-	counter int
-)
-
 func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 	geom := ZipGeom(names, coords)
 	t, err := template.New("com").Parse(`%mem=1000mb
@@ -138,55 +136,70 @@ the title
 		Geom   string
 		Params string
 	}{CHARGE, SPIN, geom, b.String()}
-	if *debug {
-		f, _ := os.Create(fmt.Sprintf("debug/file%d.com", counter))
-		counter++
-		t.Execute(f, anon)
-	}
 	t.Execute(w, anon)
 }
 
-type Job struct {
-	Filename string
-	Index    int
-	Jobid    string
-	Target   *[]float64
-}
+// monotonically increasing counter for job names
+var counter int
+
+type Type int
+
+const (
+	Fwd Type = iota
+	Bwd
+	None
+)
 
 // SEnergy returns the list of jobs needed to compute the desired
-// semi-empirical energies after writing all of the input files
-func SEnergy(dir string, names []string, geoms [][]float64, params []Param,
-	dest *[]float64) []Job {
-	os.Mkdir("inp", 0755)
+// semi-empirical energies after writing the Gaussian input files
+func SEnergy(names []string, geoms [][]float64, params []Param, col int, calc Type) []Job {
 	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
-		jobs[i] = RunGaussian(i, dir, names, geom, params)
-		jobs[i].Target = dest
+		name := fmt.Sprintf("inp/job.%010d", counter)
+		input, err := os.Create(name + ".com")
+		if err != nil {
+			panic(err)
+		}
+		counter++
+		WriteCom(input, names, geom, params)
+		input.Close()
+		jobs[i] = Job{
+			Filename: filepath.Base(name),
+			I:        i,
+			J:        col,
+		}
+		switch calc {
+		case Fwd:
+			jobs[i].Coeff = 1 / (2 * DELTA)
+		case Bwd:
+			jobs[i].Coeff = -1 / (2 * DELTA)
+		default:
+			jobs[i].Coeff = 1
+		}
 	}
 	return jobs
 }
 
-func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
-	lgeom := len(geoms)
+type Job struct {
+	Filename string
+	I, J     int
+	Jobid    string
+	Coeff    float64
+}
+
+// CentralDiff returns a list of Jobs needed to compute the ith column
+// of the numerical Jacobian
+func CentralDiff(names []string, geoms [][]float64, params []Param, p, i, col int) []Job {
 	params[p].Values[i] += DELTA
-	fwd := make([]float64, lgeom)
-	fwdJobs := SEnergy("inp", names, geoms, params, &fwd)
+	fwdJobs := SEnergy(names, geoms, params, col, Fwd)
 
 	params[p].Values[i] -= 2 * DELTA
-	bwd := make([]float64, lgeom)
-	bwdJobs := SEnergy("inp", names, geoms, params, &bwd)
+	bwdJobs := SEnergy(names, geoms, params, col, Bwd)
 
 	// have to restore the value
 	params[p].Values[i] += DELTA
 
-	jobs := append(fwdJobs, bwdJobs...)
-	RunJobs(jobs)
-	forward := mat.NewDense(lgeom, 1, fwd)
-	backward := mat.NewDense(lgeom, 1, bwd)
-	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
-	var diff mat.Dense
-	diff.Sub(forward, backward)
-	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
+	return append(fwdJobs, bwdJobs...)
 }
 
 // NumJac computes the numerical Jacobian of energies vs params
@@ -195,16 +208,18 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	cols := Len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
-	// these two loops are over params
+	// Set up all the Jobs for the Jacobian
+	jobs := make([]Job, 0)
 	for p := range params {
 		for i := range params[p].Values {
-			data := CentralDiff(names, geoms, params, p, i)
-			jac.SetCol(col, data)
-			fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
-				params[p].Names[i], params[p].Atom)
+			jobs = append(jobs,
+				CentralDiff(names, geoms, params, p, i, col)...)
 			col++
 		}
 	}
+	RunJobs(jobs, jac)
+	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
+	// 	params[p].Names[i], params[p].Atom)
 	return jac
 }
 
@@ -259,46 +274,83 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	return UpdateParams(params, &step, scale)
 }
 
-// RunJobs runs jobs and stores the results in the jobs' Targets
-func RunJobs(jobs []Job) {
-	// SEnergy makes the directory, this deletes it
-	defer os.RemoveAll("inp")
+func Filenames(jobs []Job) []string {
+	ret := make([]string, len(jobs))
+	for j := range jobs {
+		ret[j] = jobs[j].Filename
+	}
+	return ret
+}
+
+// RunJobs runs jobs and stores the results in target
+func RunJobs(jobs []Job, target *mat.Dense) {
+	var pbs int
+	chunkees := make([]Job, 0, CHUNK)
+	runJobs := make([]Job, 0, len(jobs))
+	// submit the jobs in groups of size CHUNK, then store the
+	// updated jobs in runJobs
+	for j, job := range jobs {
+		chunkees = append(chunkees, job)
+		if (j > 0 && j%CHUNK == 0) || j == len(jobs)-1 {
+			name := fmt.Sprintf("inp/%d.pbs", pbs)
+			pbs++
+			f, err := os.Create(name)
+			if err != nil {
+				panic(err)
+			}
+			WritePBS(f, name, Filenames(chunkees))
+			f.Close()
+			jobid := Submit(name)
+			for c := range chunkees {
+				chunkees[c].Jobid = jobid
+			}
+			runJobs = append(runJobs, chunkees...)
+			chunkees = make([]Job, 0, CHUNK)
+		}
+	}
 	qstat := make(map[string]bool)
 	// initialize to true
-	for _, j := range jobs {
+	for _, j := range runJobs {
 		qstat[j.Jobid] = true
 	}
 	var shortened int
-	for len(jobs) > 0 {
-		for i := 0; i < len(jobs); i++ {
-			job := jobs[i]
-			energy, err := ParseGaussian(job.Filename + ".out")
+	for len(runJobs) > 0 {
+		for i := 0; i < len(runJobs); i++ {
+			job := runJobs[i]
+			energy, err := ParseGaussian(
+				filepath.Join("inp", job.Filename+".out"),
+			)
 			if err == nil {
 				shortened++
-				(*job.Target)[job.Index] = energy
-				l := len(jobs) - 1
-				jobs[l], jobs[i] = jobs[i], jobs[l]
-				jobs = jobs[:l]
+				target.Set(job.I, job.J,
+					target.At(job.I, job.J)+
+						job.Coeff*energy)
+				l := len(runJobs) - 1
+				runJobs[l], runJobs[i] = runJobs[i], runJobs[l]
+				runJobs = runJobs[:l]
 			} else if !qstat[job.Jobid] {
-				jobs[i].Jobid = Submit(job.Filename + ".pbs")
+				// TODO Resubmit instead of naively
+				// Submit again
+				fmt.Printf("trying to resubmit %s\n", job.Filename)
+				// runJobs[i].Jobid = Submit(job.Filename + ".pbs")
 			}
 		}
 		if shortened < 1 {
-			// check the queue if no jobs finish
+			// check the queue if no runJobs finish
 			Stat(&qstat)
 		}
 		time.Sleep(1 * time.Second)
-		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(jobs))
+		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
 	}
 }
 
-func OneIter(labels []string, geoms [][]float64, params []Param, outfile string) {
+func OneIter(names []string, geoms [][]float64, params []Param, outfile string) {
 	l := len(geoms)
-	nrg := make([]float64, l)
-	jobs := SEnergy("inp", labels, geoms, params, &nrg)
-	RunJobs(jobs)
-	se := Relative(mat.NewDense(l, 1, nrg))
+	nrg := mat.NewDense(l, 1, nil)
+	jobs := SEnergy(names, geoms, params, 0, None)
+	RunJobs(jobs, nrg)
+	se := Relative(nrg)
 	out, _ := os.Create(outfile)
 	for _, s := range se.RawMatrix().Data {
 		fmt.Fprintf(out, "%20.12f\n", s)
@@ -321,6 +373,7 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
+	// TODO take these from input file
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("file07")
 	if *one != "" {
@@ -328,15 +381,17 @@ func main() {
 		OneIter(labels, geoms, params, *one)
 		os.Exit(0)
 	}
+	os.RemoveAll("inp")
+	os.Mkdir("inp", 0755)
 	LOGFILE, _ = os.Create("log")
 	paramLog, _ := os.Create("params.log")
 	ai := LoadEnergies("rel.dat")
 	params, num := LoadParams("opt.out")
 	fmt.Printf("loaded %d params\n", num)
-	nrg := make([]float64, len(geoms))
-	jobs := SEnergy("inp", labels, geoms, params, &nrg)
-	RunJobs(jobs)
-	se := Relative(mat.NewDense(len(geoms), 1, nrg))
+	nrg := mat.NewDense(len(geoms), 1, nil)
+	jobs := SEnergy(labels, geoms, params, 0, None)
+	RunJobs(jobs, nrg)
+	se := Relative(nrg)
 	norm := Norm(ai, se) * htToCm
 	rmsd := RMSD(ai, se) * htToCm
 	var (
@@ -360,9 +415,9 @@ func main() {
 		*lambda /= NU
 		// BEGIN copy-paste
 		newParams := LevMar(jac, ai, se, params, 1.0)
-		jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
-		RunJobs(jobs)
-		se = Relative(mat.NewDense(len(geoms), 1, nrg))
+		jobs = SEnergy(labels, geoms, newParams, 0, None)
+		RunJobs(jobs, nrg)
+		se = Relative(nrg)
 		norm = Norm(ai, se) * htToCm
 		rmsd = RMSD(ai, se) * htToCm
 		// END copy-paste
@@ -373,9 +428,9 @@ func main() {
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
-			jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
-			RunJobs(jobs)
-			se = Relative(mat.NewDense(len(geoms), 1, nrg))
+			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			RunJobs(jobs, nrg)
+			se = Relative(nrg)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE,
@@ -394,9 +449,9 @@ func main() {
 			k := 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "inp/params.dat")
-			jobs = SEnergy("inp", labels, geoms, newParams, &nrg)
-			RunJobs(jobs)
-			se = Relative(mat.NewDense(len(geoms), 1, nrg))
+			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			RunJobs(jobs, nrg)
+			se = Relative(nrg)
 			norm = Norm(ai, se) * htToCm
 			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",

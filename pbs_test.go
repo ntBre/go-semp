@@ -8,7 +8,10 @@ import (
 
 func TestWritePBS(t *testing.T) {
 	var buf bytes.Buffer
-	WritePBS(&buf, "the name", "input.com")
+	WritePBS(&buf, "the name", []string{
+		"input1.com",
+		"input2.com",
+	})
 	got := buf.String()
 	want := `#!/bin/bash
 #SBATCH --job-name=the name
@@ -18,10 +21,11 @@ func TestWritePBS(t *testing.T) {
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 
-/home/qc/bin/g16b01.sh input.com
+/home/qc/bin/g16b01.sh input1.com
+/home/qc/bin/g16b01.sh input2.com
 `
 	if got != want {
-		t.Errorf("got %v, wanted %v\n", got, want)
+		t.Errorf("got\n%#+v, wanted\n%#+v\n", got, want)
 	}
 }
 

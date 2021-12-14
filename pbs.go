@@ -14,8 +14,8 @@ import (
 var Templates embed.FS
 
 type PBS struct {
-	Name  string
-	Input string
+	Name   string
+	Inputs []string
 }
 
 var PBS_TEMPLATE *template.Template
@@ -28,10 +28,10 @@ func init() {
 	}
 }
 
-func WritePBS(w io.Writer, name, infile string) {
+func WritePBS(w io.Writer, name string, infiles []string) {
 	PBS_TEMPLATE.Execute(w, PBS{
-		Name:  name,
-		Input: infile,
+		Name:   filepath.Base(name),
+		Inputs: infiles,
 	})
 }
 

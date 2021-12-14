@@ -1,9 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name={{.Name}}
+#SBATCH --job-name=semp
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o {{.Name}}.pbs.out
+#SBATCH -o {{.Name}}.out
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 
-/home/qc/bin/g16b01.sh {{.Input}}
+{{range .Inputs -}}
+/home/qc/bin/g16b01.sh {{.}}.com
+{{end -}}
