@@ -74,9 +74,11 @@ type Param struct {
 	Values []float64
 }
 
-func WriteParams(params []Param, f io.Writer) {
+// WriteParams formats params for use in a Gaussian input file and
+// writes them to w
+func WriteParams(w io.Writer, params []Param) {
 	for _, param := range params {
-		fmt.Fprintf(f, " ****\n%2s", param.Atom)
+		fmt.Fprintf(w, " ****\n%2s", param.Atom)
 		var last, sep string
 		for i, name := range param.Names {
 			if strings.Contains(name, "DCore") {
@@ -85,21 +87,21 @@ func WriteParams(params []Param, f io.Writer) {
 				sep = "="
 			}
 			if name == last {
-				fmt.Fprintf(f, ",%.10f", param.Values[i])
+				fmt.Fprintf(w, ",%.10f", param.Values[i])
 			} else {
-				fmt.Fprintf(f, "\n%s%s%.10f",
+				fmt.Fprintf(w, "\n%s%s%.10f",
 					name, sep, param.Values[i])
 				last = name
 			}
 		}
-		fmt.Fprint(f, "\n")
+		fmt.Fprint(w, "\n")
 	}
-	fmt.Fprint(f, " ****\n\n")
+	fmt.Fprint(w, " ****\n\n")
 }
 
 func LogParams(w io.Writer, params []Param, iter int) {
 	fmt.Fprintf(w, "Iter %5d\n", iter)
-	WriteParams(params, w)
+	WriteParams(w, params)
 }
 
 func DumpParams(params []Param, filename string) {
@@ -108,7 +110,7 @@ func DumpParams(params []Param, filename string) {
 	if err != nil {
 		panic(err)
 	}
-	WriteParams(params, f)
+	WriteParams(f, params)
 }
 
 var (
@@ -132,7 +134,7 @@ the title
 		panic(err)
 	}
 	var b bytes.Buffer
-	WriteParams(params, &b)
+	WriteParams(&b, params)
 	anon := struct {
 		Charge int
 		Spin   int
