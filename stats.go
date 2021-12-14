@@ -6,6 +6,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+// Relative makes the values in a relative to its minimum
 func Relative(a *mat.Dense) *mat.Dense {
 	min := mat.Min(a)
 	r, c := a.Dims()

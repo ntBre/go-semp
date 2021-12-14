@@ -17,3 +17,6 @@ clean:
 
 test:
 	go test .
+
+cover:
+	go test . -v -coverprofile=/tmp/pbqff.out; go tool cover -html /tmp/pbqff.out

@@ -18,22 +18,29 @@ type PBS struct {
 	Input string
 }
 
-func WritePBS(w io.Writer, name, infile string) {
-	// FIXME probably don't need to do this on every iteration
-	f, err := template.ParseFS(Templates, "pbs.tmpl")
+var PBS_TEMPLATE *template.Template
+
+func init() {
+	var err error
+	PBS_TEMPLATE, err = template.ParseFS(Templates, "pbs.tmpl")
 	if err != nil {
 		panic(err)
 	}
-	f.Execute(w, PBS{
+}
+
+func WritePBS(w io.Writer, name, infile string) {
+	PBS_TEMPLATE.Execute(w, PBS{
 		Name:  name,
 		Input: infile,
 	})
 }
 
+var SUBMIT_CMD string = "sbatch"
+
 func Submit(filename string) string {
 	dir := filepath.Dir(filename)
 	base := filepath.Base(filename)
-	cmd := exec.Command("sbatch", base)
+	cmd := exec.Command(SUBMIT_CMD, base)
 	cmd.Dir = dir
 	byts, err := cmd.Output()
 	if err != nil {
