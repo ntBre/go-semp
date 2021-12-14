@@ -329,10 +329,7 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				runJobs[l], runJobs[i] = runJobs[i], runJobs[l]
 				runJobs = runJobs[:l]
 			} else if !qstat[job.Jobid] {
-				// TODO Resubmit instead of naively
-				// Submit again
-				fmt.Printf("trying to resubmit %s\n", job.Filename)
-				// runJobs[i].Jobid = Submit(job.Filename + ".pbs")
+				runJobs[i].Jobid = Resubmit(job.Filename)
 			}
 		}
 		if shortened < 1 {
@@ -343,6 +340,21 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
 	}
+}
+
+func Resubmit(filename string) string {
+	fmt.Println("tried to resubmit", filename)
+	// name := fmt.Sprintf("inp/%d.pbs", 1)
+	// pbs++
+	// f, err := os.Create(name)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// WritePBS(f, name, Filenames(chunkees))
+	// f.Close()
+	// return Submit(name)
+	os.Exit(1)
+	return ""
 }
 
 func OneIter(names []string, geoms [][]float64, params []Param, outfile string) {
