@@ -10,7 +10,10 @@ deploy: semp
 	scp -C semp $(DEST)
 
 eland: semp
-	scp -C semp 'eland:semp/.'
+	scp -C semp 'eland:programs/semp/.'
 
 clean:
 	rm -f params.dat out
+
+test:
+	go test .
