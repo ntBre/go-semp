@@ -73,6 +73,15 @@ type Param struct {
 	Values []float64
 }
 
+type Params []Param
+
+func (p Params) Values() (ret []float64) {
+	for i := range p {
+		ret = append(ret, p[i].Values...)
+	}
+	return
+}
+
 // WriteParams formats params for use in a Gaussian input file and
 // writes them to w
 func WriteParams(w io.Writer, params []Param) {
@@ -212,8 +221,14 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	jobs := make([]Job, 0)
 	for p := range params {
 		for i := range params[p].Values {
+			if *debug {
+				fmt.Printf("before:%12.9f\n", Params(params).Values())
+			}
 			jobs = append(jobs,
 				CentralDiff(names, geoms, params, p, i, col)...)
+			if *debug {
+				fmt.Printf(" after:%12.9f\n", Params(params).Values())
+			}
 			col++
 		}
 	}
@@ -284,6 +299,11 @@ func Filenames(jobs []Job) []string {
 
 // RunJobs runs jobs and stores the results in target
 func RunJobs(jobs []Job, target *mat.Dense) {
+	var check *mat.Dense
+	if *debug {
+		r, c := target.Dims()
+		check = mat.NewDense(r, c, nil)
+	}
 	var pbs int
 	chunkees := make([]Job, 0, CHUNK)
 	runJobs := make([]Job, 0, len(jobs))
@@ -322,6 +342,9 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 			)
 			if err == nil {
 				shortened++
+				if *debug {
+					check.Set(job.I, job.J, check.At(job.I, job.J)+1)
+				}
 				target.Set(job.I, job.J,
 					target.At(job.I, job.J)+
 						job.Coeff*energy)
@@ -339,6 +362,9 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 		time.Sleep(1 * time.Second)
 		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
+	}
+	if *debug {
+		DumpMat(check)
 	}
 }
 

@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
@@ -82,15 +84,28 @@ func DumpVec(a *mat.Dense) {
 }
 
 func DumpMat(m mat.Matrix) {
+	WriteMat(os.Stdout, m)
+}
+
+func DumpJac(m mat.Matrix) {
+	f, err := os.Create("jac")
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	WriteMat(f, m)
+}
+
+func WriteMat(w io.Writer, m mat.Matrix) {
 	r, c := m.Dims()
 	for i := 0; i < r; i++ {
-		fmt.Printf("%5d", i)
+		fmt.Fprintf(w, "%5d", i)
 		for j := 0; j < c; j++ {
-			fmt.Printf("%12.8f", m.At(i, j))
+			fmt.Fprintf(w, "%12.8f", m.At(i, j))
 		}
-		fmt.Print("\n")
+		fmt.Fprint(w, "\n")
 	}
-	fmt.Print("\n")
+	fmt.Fprint(w, "\n")
 }
 
 func Identity(n int) *mat.Dense {
