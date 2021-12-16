@@ -454,6 +454,7 @@ func main() {
 		// BEGIN copy-paste
 		newParams := LevMar(jac, ai, se, params, 1.0)
 		jobs = SEnergy(labels, geoms, newParams, 0, None)
+		nrg.Zero()
 		RunJobs(jobs, nrg)
 		se = Relative(nrg)
 		norm = Norm(ai, se) * htToCm
@@ -467,6 +468,7 @@ func main() {
 			*lambda *= NU
 			newParams := LevMar(jac, ai, se, params, 1.0)
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			nrg.Zero()
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
 			norm = Norm(ai, se) * htToCm
@@ -488,6 +490,7 @@ func main() {
 			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "inp/params.dat")
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			nrg.Zero()
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
 			norm = Norm(ai, se) * htToCm
