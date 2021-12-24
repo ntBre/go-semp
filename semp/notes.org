@@ -18,6 +18,9 @@ the jacobian.
   - should really reduce the number considered
   - trying this out
 * having trouble with singular matrix
+  - for now just ignore the error and see how the step works
+    - this did not work out, the first step was disasterous, went from
+      'rmsd' of like 800 to over 10_000
   - might be too many params for the number of energies, not a unique
     solution
   - retrying with 24 geometries to the 23 params
