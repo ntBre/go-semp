@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"os/exec"
 
@@ -23,6 +24,8 @@ const (
 	// from http://www.ilpi.com/msds/ref/energyunits.html
 	htToCm = 219_474.5459784
 	EPS    = 1e-14
+	THRESH = 1.0
+	NU     = 2.0
 )
 
 var (
@@ -37,14 +40,14 @@ var (
 		"DCore":  {},
 		"EHeat":  {},
 		"DipHyp": {},
-		"GCore":  {},
+		// "GCore":  {},
 	}
 	CHARGE = 0
 	SPIN   = 1
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
-	//  size
-	DELTA   = 6e-6
+	//  size => 6e-6; adjusting down from there
+	DELTA   = 1e-8
 	LOGFILE io.Writer
 )
 
@@ -53,6 +56,11 @@ var (
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
+	gauss      = flag.String("gauss", "g16", "command to run gaussian")
+	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
+	maxit      = flag.Int("maxit", 100, "maximum iterations")
+	one        = flag.String("one", "", "run one iteration using the "+
+		"params in params.dat and save the results in the argument")
 )
 
 type Param struct {
@@ -180,12 +188,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 	return
 }
 
-func DumpParams(params []Param, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
+func WriteParams(params []Param, f io.Writer) {
 	for _, param := range params {
 		fmt.Fprintf(f, " ****\n%2s", param.Atom)
 		var last, sep string
@@ -206,6 +209,20 @@ func DumpParams(params []Param, filename string) {
 		fmt.Fprint(f, "\n")
 	}
 	fmt.Fprint(f, " ****\n\n")
+}
+
+func LogParams(w io.Writer, params []Param, iter int) {
+	fmt.Fprintf(w, "Iter %5d\n", iter)
+	WriteParams(params, w)
+}
+
+func DumpParams(params []Param, filename string) {
+	f, err := os.Create(filename)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	WriteParams(params, f)
 }
 
 var (
@@ -246,7 +263,7 @@ func RunGaussian(dir string, names []string,
 	geom []float64, paramfile string) (ret float64) {
 	var input bytes.Buffer
 	WriteCom(&input, names, geom, paramfile)
-	cmd := exec.Command("g16")
+	cmd := exec.Command(*gauss)
 	cmd.Dir = dir
 	cmd.Stdin = &input
 	var r io.Reader
@@ -254,13 +271,18 @@ func RunGaussian(dir string, names []string,
 	if *debug {
 		outfile, _ := os.Create(fmt.Sprintf("debug/output%d.com", counter-1))
 		r = io.TeeReader(r, outfile)
+		errfile, _ := os.Create(fmt.Sprintf("debug/output%d.err", counter-1))
+		cmd.Stderr = errfile
 	}
 	err := cmd.Start()
-	if err != nil {
-		fmt.Printf("error running %s:\n", cmd.String())
-		panic(err)
+	// actually release the resources for a command
+	defer cmd.Wait()
+	for i := 3; err != nil && i > 0; i-- {
+		fmt.Printf("error running %s, sleeping\n", cmd.String())
+		time.Sleep(60 * time.Second)
 	}
 	scanner := bufio.NewScanner(r)
+	var found bool
 	for scanner.Scan() {
 		if strings.Contains(scanner.Text(), "SCF Done") {
 			fields := strings.Fields(scanner.Text())
@@ -271,7 +293,11 @@ func RunGaussian(dir string, names []string,
 				fmt.Printf("error parsing %q\n", fields)
 				panic(err)
 			}
+			found = true
 		}
+	}
+	if !found {
+		panic("energy not found in gaussian run")
 	}
 	return
 }
@@ -301,7 +327,7 @@ func PLSEnergy(dir string, names []string, geoms [][]float64, paramfile string) 
 
 // SEnergy returns the relative semi-empirical energies in Ht
 // corresponding to params
-func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []float64 {
+func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) *mat.Dense {
 	ret := make([]float64, len(geoms))
 	for i, geom := range geoms {
 		ret[i] = RunGaussian(dir, names, geom, paramfile)
@@ -310,40 +336,36 @@ func SEnergy(dir string, names []string, geoms [][]float64, paramfile string) []
 			fmt.Printf("%5d%20.12f\n", i, ret[i])
 		}
 	}
-	return ret
+	return mat.NewDense(len(ret), 1, ret)
+}
+
+func CentralDiff(names []string, geoms [][]float64, params []Param, p, i int) []float64 {
+	params[p].Values[i] += DELTA
+	DumpParams(params, "params.dat")
+	forward := PLSEnergy(".", names, geoms, "params.dat")
+
+	params[p].Values[i] -= 2 * DELTA
+	DumpParams(params, "params.dat")
+	backward := PLSEnergy(".", names, geoms, "params.dat")
+
+	// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h is DELTA here
+	var diff mat.Dense
+	diff.Sub(forward, backward)
+	return Scale(1/(2*DELTA), diff.RawMatrix().Data)
 }
 
 // NumJac computes the numerical Jacobian of energies vs params
-func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
+func NumJac(names []string, geoms [][]float64,
+	params []Param, energies *mat.Dense) *mat.Dense {
 	rows := len(geoms)
 	cols := Len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	for p := range params {
-		// already parallelized SEnergy itself, but I could
-		// add another layer here. 8 cpus in SEnergy, r410
-		// nodes have 40 CPUs, so I could do 5 columns at a
-		// time.
-
-		// I think this is where to parallelize, need a dir
-		// for each column; recycle dir name with semaphore
-		// and WaitGroup
 		for i := range params[p].Values {
-			params[p].Values[i] += DELTA
-			DumpParams(params, "params.dat")
-			forward := SEnergy(".", names, geoms, "params.dat")
-
-			params[p].Values[i] -= 2 * DELTA
-			DumpParams(params, "params.dat")
-			backward := SEnergy(".", names, geoms, "params.dat")
-
-			// f'(x) ~ [ f(x+h) - f(x-h) ] / 2h ; where h
-			// is DELTA here
-			jac.SetCol(col, Scale(1/(2*DELTA), Sub(forward, backward)))
-
-			// reset and move to next column
-			params[p].Values[i] += DELTA
-			fmt.Fprintf(LOGFILE, "finished col %d -> %s of %s\n", col,
+			data := CentralDiff(names, geoms, params, p, i)
+			jac.SetCol(col, data)
+			fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 				params[p].Names[i], params[p].Atom)
 			col++
 		}
@@ -364,10 +386,30 @@ func Relative(a *mat.Dense) *mat.Dense {
 	return ret
 }
 
-func RMSD(a, b *mat.Dense) float64 {
+func Norm(a, b *mat.Dense) float64 {
 	var diff mat.Dense
 	diff.Sub(a, b)
 	return mat.Norm(&diff, 2)
+}
+
+func RMSD(a, b *mat.Dense) (ret float64) {
+	as := a.RawMatrix().Data
+	bs := b.RawMatrix().Data
+	if len(as) != len(bs) {
+		panic("dimension mismatch")
+	}
+	var count int
+	for i := range as {
+		// deviation
+		diff := as[i] - bs[i]
+		// square
+		ret += diff * diff
+		count++
+	}
+	// mean
+	ret /= float64(count)
+	// root
+	return math.Sqrt(ret)
 }
 
 func DumpVec(a *mat.Dense) {
@@ -392,13 +434,21 @@ func DumpMat(m mat.Matrix) {
 	fmt.Print("\n")
 }
 
-func UpdateParams(params []Param, v *mat.Dense) []Param {
+func Identity(n int) *mat.Dense {
+	ret := mat.NewDense(n, n, nil)
+	for i := 0; i < n; i++ {
+		ret.Set(i, i, 1.0)
+	}
+	return ret
+}
+
+func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	ret := make([]Param, 0, len(params))
 	var i int
 	for _, p := range params {
 		vals := make([]float64, 0, len(p.Values))
 		for _, val := range p.Values {
-			vals = append(vals, val+v.At(i, 0))
+			vals = append(vals, val+v.At(i, 0)*scale)
 			i++
 		}
 		ret = append(ret, Param{
@@ -410,43 +460,23 @@ func UpdateParams(params []Param, v *mat.Dense) []Param {
 	return ret
 }
 
-func main() {
-	flag.Parse()
-	if *debug {
-		os.Mkdir("debug", 0744)
-	}
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-	LOGFILE, _ = os.Create("log")
-	labels := []string{"C", "C", "C", "H", "H"}
-	geoms := LoadGeoms("file07")
-	ai := LoadEnergies("rel.dat")
-	params, num := LoadParams("opt.out")
-	fmt.Printf("loaded %d params\n", num)
-	DumpParams(params, "params.dat")
-	// BEGIN initial RMSD
-	energies := PLSEnergy(".", labels, geoms, "params.dat")
-	energies = Relative(energies)
-	var iter int
-	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
-	// END initial RMSD
-
-	// BEGIN first step
-	jac := NumJac(labels, geoms, params)
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
+	// LHS
 	var prod mat.Dense
 	prod.Mul(jac.T(), jac)
+	r, _ := prod.Dims()
+	eye := Identity(r)
+	var Leye mat.Dense
+	Leye.Scale(*lambda, eye)
+	var sum mat.Dense
+	sum.Add(&prod, &Leye)
+	// RHS
 	var diff mat.Dense
-	diff.Sub(ai, energies)
+	diff.Sub(ai, se)
 	var prod2 mat.Dense
 	prod2.Mul(jac.T(), &diff)
 	var step mat.Dense
-	err := step.Solve(&prod, &prod2)
+	err := step.Solve(&sum, &prod2)
 	if err != nil {
 		fmt.Println("jacT")
 		DumpMat(jac.T())
@@ -460,14 +490,120 @@ func main() {
 		DumpVec(&step)
 		panic(err)
 	}
+	return UpdateParams(params, &step, scale)
+}
 
-	newParams := UpdateParams(params, &step)
-	DumpParams(newParams, "params.dat")
-	// BEGIN initial RMSD
-	energies = PLSEnergy(".", labels, geoms, "params.dat")
-	energies = Relative(energies)
-	// var iter int
-	fmt.Printf("RMSD %5d: %10.4f\n", iter, RMSD(ai, energies)*htToCm)
-	// END initial RMSD
-	// END first step
+func OneIter(labels []string, geoms [][]float64, paramfile, outfile string) {
+	se := Relative(PLSEnergy(".", labels, geoms, paramfile))
+	out, _ := os.Create(outfile)
+	for _, s := range se.RawMatrix().Data {
+		fmt.Fprintf(out, "%20.12f\n", s)
+	}
+}
+
+func main() {
+	host, _ := os.Hostname()
+	flag.Parse()
+	fmt.Printf("running with %d cpus on host: %s\n", *ncpus, host)
+	fmt.Printf("initial lambda: %.14f\n", *lambda)
+	if *debug {
+		os.Mkdir("debug", 0744)
+	}
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	labels := []string{"C", "C", "C", "H", "H"}
+	geoms := LoadGeoms("file07")
+	if *one != "" {
+		OneIter(labels, geoms, "params.dat", *one)
+		os.Exit(0)
+	}
+	LOGFILE, _ = os.Create("log")
+	paramLog, _ := os.Create("params.log")
+	ai := LoadEnergies("rel.dat")
+	params, num := LoadParams("opt.out")
+	fmt.Printf("loaded %d params\n", num)
+	DumpParams(params, "params.dat")
+	baseEnergies := PLSEnergy(".", labels, geoms, "params.dat")
+	se := Relative(baseEnergies)
+	norm := Norm(ai, se) * htToCm
+	rmsd := RMSD(ai, se) * htToCm
+	var (
+		iter     int
+		lastNorm float64
+		lastRMSD float64
+	)
+	fmt.Printf("%17s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, 0.0)
+	LogParams(paramLog, params, iter)
+	iter++
+	lastNorm = norm
+	lastRMSD = rmsd
+	start := time.Now()
+	for iter < *maxit && norm > THRESH {
+		jac := NumJac(labels, geoms, params, baseEnergies)
+		*lambda /= NU
+		// BEGIN copy-paste
+		newParams := LevMar(jac, ai, se, params, 1.0)
+		DumpParams(newParams, "params.dat")
+		se = PLSEnergy(".", labels, geoms, "params.dat")
+		se = Relative(se)
+		norm = Norm(ai, se) * htToCm
+		rmsd = RMSD(ai, se) * htToCm
+		// END copy-paste
+
+		// case ii. and iii. of levmar, first case is ii. from
+		// Marquardt63
+		var bad bool
+		for i := 0; norm > lastNorm; i++ {
+			*lambda *= NU
+			newParams := LevMar(jac, ai, se, params, 1.0)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			rmsd = RMSD(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE,
+				"\tλ_%d to %g\n", i, *lambda)
+			// give up after 5 increases
+			if i > 4 {
+				// case iii. failed, try footnote
+				bad = true
+				*lambda *= math.Pow(NU, float64(-(i + 1)))
+				break
+			}
+		}
+		var prev float64
+		// just break if decreasing k doesnt change the norm
+		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
+			k := 1.0 / float64(int(1)<<i)
+			newParams := LevMar(jac, ai, se, params, k)
+			DumpParams(newParams, "params.dat")
+			se = PLSEnergy(".", labels, geoms, "params.dat")
+			se = Relative(se)
+			norm = Norm(ai, se) * htToCm
+			rmsd = RMSD(ai, se) * htToCm
+			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
+				i, k, norm-lastNorm)
+			prev = norm
+		}
+		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD,
+			float64(time.Since(start))/1e9)
+		start = time.Now()
+		lastNorm = norm
+		lastRMSD = rmsd
+		params = newParams
+		LogParams(paramLog, params, iter)
+		iter++
+	}
 }
