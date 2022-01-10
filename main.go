@@ -352,7 +352,7 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				runJobs[l], runJobs[i] = runJobs[i], runJobs[l]
 				runJobs = runJobs[:l]
 			} else if !qstat[job.Jobid] {
-				runJobs[i].Jobid = Resubmit(job.Filename)
+				runJobs[i] = Resubmit(job)
 			}
 		}
 		if shortened < 1 {
@@ -368,19 +368,30 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 	}
 }
 
-func Resubmit(filename string) string {
-	fmt.Println("tried to resubmit", filename)
-	// name := fmt.Sprintf("inp/%d.pbs", 1)
-	// pbs++
-	// f, err := os.Create(name)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// WritePBS(f, name, Filenames(chunkees))
-	// f.Close()
-	// return Submit(name)
-	os.Exit(1)
-	return ""
+func Resubmit(job Job) Job {
+	src, _ := os.Open(job.Filename + ".inp")
+	inp := job.Filename + "_redo.inp"
+	dst, _ := os.Create(inp)
+	io.Copy(dst, src)
+	defer func() {
+		src.Close()
+		dst.Close()
+	}()
+	pbs := job.Filename + "_redo.pbs"
+	f, err := os.Create(pbs)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	WritePBS(f, job.Filename, []string{inp})
+	fmt.Printf("resubmitting %s as %s\n", job.Filename, inp)
+	return Job{
+		Filename: inp,
+		I:        job.I,
+		J:        job.J,
+		Jobid:    Submit(pbs),
+		Coeff:    job.Coeff,
+	}
 }
 
 func OneIter(names []string, geoms [][]float64, params []Param, outfile string) {
