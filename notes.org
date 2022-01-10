@@ -1,0 +1,175 @@
+I need a little more info about Gaussian itself on Maple. Do I need to
+make separate directories for each column? Can I just invoke the g16
+command and write its stdin from memory?
+
+#+begin_src go
+  var buf bytes.Buffer
+  cmd := exec.Command("g16")
+  cmd.Stdin = WriteCom()
+  cmd.Stdout = buf
+#+end_src
+
+[[pdf:/home/brent/Research/Prospectus/Paper/main.pdf][document]]
+
+or something like that. What I do know is that I need to prepare
+input, give it to g16 and parse the output for the energy. The
+energies for each geometry for a given parameter set give a column in
+the jacobian.
+
+* Data
+  SE(# of params)
+  4,5,7,9 are expt
+  17 converged in ~40 iterations, but I deleted the file
+  | Mode | Scaled B3LYP | SE(17) | SE(23) | Best/Expt |
+  |------+--------------+--------+--------+-----------|
+  |    1 |       3191.2 | 3216.3 |        |    3142.6 |
+  |    2 |       3154.6 | 3187.4 |        |    3120.8 |
+  |    3 |       1546.6 | 1663.2 |        |    1600.9 |
+  |    4 |       1197.3 | 1171.3 |        |    1278.8 |
+  |    5 |       1027.5 | 1048.0 |        |    1061.5 |
+  |    6 |        966.5 |  924.9 |        |     970.2 |
+  |    7 |        868.0 |  877.4 |        |     886.4 |
+  |    8 |        820.6 |  850.2 |        |     878.6 |
+  |    9 |        767.6 |  802.0 |        |     787.4 |
+  |------+--------------+--------+--------+-----------|
+  |  AVG |         20.8 |   -1.5 |        |         - |
+  |  MAE |         39.1 |   46.8 |        |         - |
+  | MA%E |         3.02 |   3.20 |        |         - |
+
+* TODO maybe save the relative energies to a file on each iteration
+  - would be nice now to compute the rmsd and in general for running
+    the tail end of the qff after
+  - energies.log or dat or something
+
+* TODO make ν iteration capped at an int instead of arbitrary 1.0
+  - alternatively loop until norm-last doesn't change like K
+
+* TODO THRESH and precision of delta printing should probably match up
+
+* running once with 10 maxit to collect a profile and then turning loose for the weekend
+
+* eland timing
+  | Jobs | CPUs | ncpus | Time/Iter |
+  |------+------+-------+-----------|
+  |   24 |   12 |    12 |      79.3 |
+  |   24 |   24 |    24 |        51 |
+  |   24 |   24 |    48 |        50 |
+  |   24 |   48 |    48 |           |
+  |   24 |   48 |    96 |        48 |
+
+* eland
+  - actual number of cpus is CPU(s)/thread(s) per core
+  - 45 sec/iter for 24 cpus and 24 jobs
+
+* WAIT check footnote 3 of marquardt63
+  - tried this, but not really working, maybe my function for K isn't
+    right
+  - if λ gets too large, you can formulate case iii differently
+  - λ is getting very large, probably cut it off and try footnote at 1
+
+* λ = 1e8 works pretty nicely as a constant it seems
+  - only let it go 3 iterations but it was working nicely
+
+* case ii. and iii. of levmar are the same
+  - if ϕ(λ/ν) <= last is case i.
+  - since I already divided once, I have to multiply to try the old
+    value of λ, so just keep multiplying in a loop to get case iii.
+
+* IDEA try just decreasing step size when difference between steps is small
+  - like less than threshold small, that should signal we need to be
+    more careful
+
+* version with constant lambda converged smoothly down to ~30 cm-1
+  [[pdf:/home/brent/Library/Marquardt63.pdf][Actual lambda definitions from Marquardt, page 8]]
+  - but then it got stuck
+
+* finally got set up to run on eland
+  - however, the energies are not matching up, at least using
+    PLSEnergy, even with ncpus=1
+  - switched back to SEnergy and also replaced the PL calls in main
+    - same results on eland as with PL
+    - maple also gives the same results as before with PL and ncpus=1
+  - PL version seems to have worked at least for the first call
+  - OH I bet something isn't rewriting the params file
+    - no, I always write params before calculating
+  - must be a concurrency bug if I can reproduce the numbers with
+    SEnergy
+  - I'm getting different answers between eland and maple with the
+    same code running, very suspicious
+  - the eland version actually seems to be working better, it
+    converges very rapidly but then oscillates
+    - probably need to reduce the step size when close to a minimum or
+      use the damping approach, is that the same?
+
+* new plan to speed up
+  - use submission framework from pbqff and run on head node
+  - multiple directories so I can keep doing the @params thing
+  - parallelize over those directories
+    - one column of numjac in each dir
+
+* the RMSD finally went down!!
+  - 24 energies, 17 params, central differences
+  - I wonder if factoring CentralDiff into a function solved the
+    problem. I might have been editing the params in place and messing
+    things up before
+  - although I did think I was resetting them
+  - forward differences give much worse rmsd, at least initially
+  - and then crashed after taking a terrible step, probably not going
+    to use forward differences
+
+* trying out forward differences
+  - this requires passing (or calculating I guess) the energy of f(ϐ),
+    so I passed this into NumJac. I can remove this if I decide
+    against forward differences
+  - I think there may just be too few energies to make it non singular
+
+* IDEA try only keeping nonzero params
+  - should really reduce the number considered
+  - trying this out
+* having trouble with singular matrix
+  - for now just ignore the error and see how the step works
+    - this did not work out, the first step was disasterous, went from
+      'rmsd' of like 800 to over 10_000
+  - might be too many params for the number of energies, not a unique
+    solution
+  - retrying with 24 geometries to the 23 params
+  - stll not helping, trying removing gcore and then I'm going to try
+    adjusting the step size again
+    - gcore did not help, back to smaller step size
+    - the condition number did get a bit smaller, but not sufficiently
+      so to make it not an error
+  - could be singular because I'm not taking out terms that relate to
+    each other, might have to parse more carefully
+    - for example 1,2 param vs 2,1 should not be independent
+* DONE load geometries
+* DONE load rel.dat
+* DONE load params
+* DONE dump params
+* DONE write a gaussian file
+* DONE write all the gaussian files needed for a step
+  - mostly done, need to test
+  - I think this is viewing it backwards, I need to have the matrix
+    first imo
+* DONE call gaussian directly, run this on a node
+  - mostly done need to test in real life
+  - eventually request multiple cpus and run in parallel
+  - do I need to set up all the scratch dir stuff? or can I just call
+    in the current directory
+* DONE assemble Jacobian matrix from repeated calls to gaussian
+  - I think this is done, pending a good SEnergy implementation
+* DONE matrix math to get new params
+  - use gonum, permissive license confirmed
+* DONE compute and print rmsd to log file
+  - also compute one initially
+* DONE repeat
+* WAIT acquire atom labels
+  - hard-code for now, load from somewhere later
+  - probably from params file
+  - or read an input file directly and run the initial params run for
+    the user
+* Units
+  Gaussian outputs the semi-empirical energies in AU, so I think I
+  don't have to do any conversions
+* Actually don't have to keep writing the input file to stdin
+  - the geometries stay the same, only params change, so I could
+    actually write files and keep using them

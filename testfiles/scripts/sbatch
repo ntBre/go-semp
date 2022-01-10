@@ -1,0 +1,3 @@
+#!/bin/sh
+
+echo "Submitted batch job 12345678"
