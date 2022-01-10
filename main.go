@@ -235,7 +235,18 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	RunJobs(jobs, jac)
 	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 	// 	params[p].Names[i], params[p].Atom)
+	cleanup()
 	return jac
+}
+
+// Remove the `inp` directory and recreate it
+func cleanup() {
+	if err := os.RemoveAll("inp"); err != nil {
+		panic(err)
+	}
+	if err := os.Mkdir("inp", 0744); err != nil {
+		panic(err)
+	}
 }
 
 func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
