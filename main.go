@@ -430,19 +430,19 @@ func main() {
 	jobs := SEnergy(labels, geoms, params, 0, None)
 	RunJobs(jobs, nrg)
 	se := Relative(nrg)
-	norm := Norm(ai, se) * htToCm
+	norm, max := Norm(ai, se)
 	rmsd := RMSD(ai, se) * htToCm
 	var (
 		iter     int
 		lastNorm float64
 		lastRMSD float64
 	)
-	fmt.Printf("%17s%12s%12s%12s%12s\n",
-		"cm-1", "cm-1", "cm-1", "cm-1", "s")
-	fmt.Printf("%5s%12s%12s%12s%12s%12s\n",
-		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, 0.0)
+	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, 0.0)
 	LogParams(paramLog, params, iter)
 	iter++
 	lastNorm = norm
@@ -457,7 +457,7 @@ func main() {
 		nrg.Zero()
 		RunJobs(jobs, nrg)
 		se = Relative(nrg)
-		norm = Norm(ai, se) * htToCm
+		norm, max = Norm(ai, se)
 		rmsd = RMSD(ai, se) * htToCm
 		// END copy-paste
 
@@ -471,7 +471,7 @@ func main() {
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
-			norm = Norm(ai, se) * htToCm
+			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE,
 				"\tλ_%d to %g\n", i, *lambda)
@@ -493,14 +493,14 @@ func main() {
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
-			norm = Norm(ai, se) * htToCm
+			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
 				i, k, norm-lastNorm)
 			prev = norm
 		}
-		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD,
+		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
 			float64(time.Since(start))/1e9)
 		start = time.Now()
 		lastNorm = norm

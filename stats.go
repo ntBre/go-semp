@@ -20,11 +20,12 @@ func Relative(a *mat.Dense) *mat.Dense {
 	return ret
 }
 
-// Norm computes the Euclidean norm between vectors a and b
-func Norm(a, b *mat.Dense) float64 {
+// Norm returns the Euclidean norm and maximum difference between
+// vectors a and b after converting both from Hartrees to cm⁻¹
+func Norm(a, b *mat.Dense) (norm, max float64) {
 	var diff mat.Dense
 	diff.Sub(a, b)
-	return mat.Norm(&diff, 2)
+	return mat.Norm(&diff, 2) * htToCm, mat.Max(&diff) * htToCm
 }
 
 // RMSD computes the root-mean-square deviation between vectors a and

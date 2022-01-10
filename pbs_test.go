@@ -9,15 +9,15 @@ import (
 func TestWritePBS(t *testing.T) {
 	var buf bytes.Buffer
 	WritePBS(&buf, "the name", []string{
-		"input1.com",
-		"input2.com",
+		"input1",
+		"input2",
 	})
 	got := buf.String()
 	want := `#!/bin/bash
-#SBATCH --job-name=the name
+#SBATCH --job-name=semp
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o the name.pbs.out
+#SBATCH -o the name.out
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 
