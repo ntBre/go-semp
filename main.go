@@ -24,6 +24,7 @@ const (
 	THRESH = 1.0
 	NU     = 2.0
 	CHUNK  = 128
+	INFILE_SUFFIX = ".com"
 )
 
 var (
@@ -165,7 +166,7 @@ func SEnergy(names []string, geoms [][]float64, params []Param, col int, calc Ty
 	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
 		name := fmt.Sprintf("inp/job.%010d", counter)
-		input, err := os.Create(name + ".com")
+		input, err := os.Create(name + INFILE_SUFFIX)
 		if err != nil {
 			panic(err)
 		}
@@ -387,14 +388,18 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 }
 
 func Resubmit(job Job) Job {
-	src, _ := os.Open(filepath.Join("inp", job.Filename+".inp"))
-	inp := filepath.Join("inp", job.Filename+"_redo.inp")
-	dst, _ := os.Create(inp)
+	src, err := os.Open(filepath.Join("inp", job.Filename+INFILE_SUFFIX))
+	defer src.Close()
+	if err != nil {
+		panic(err)
+	}
+	inp := filepath.Join("inp", job.Filename+"_redo"+INFILE_SUFFIX)
+	dst, err := os.Create(inp)
+	if err != nil {
+		panic(err)
+	}
+	defer dst.Close()
 	io.Copy(dst, src)
-	defer func() {
-		src.Close()
-		dst.Close()
-	}()
 	pbs := filepath.Join("inp", job.Filename+"_redo.pbs")
 	f, err := os.Create(pbs)
 	defer f.Close()
