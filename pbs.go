@@ -37,6 +37,9 @@ func WritePBS(w io.Writer, name string, infiles []string) {
 
 var SUBMIT_CMD string = "sbatch"
 
+// Submit sends filename to the queue. The directory for the
+// submission command is taken from the filename, so the full path
+// needs to be present.
 func Submit(filename string) string {
 	dir := filepath.Dir(filename)
 	base := filepath.Base(filename)
