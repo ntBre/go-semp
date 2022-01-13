@@ -19,11 +19,11 @@ import (
 
 const (
 	// from http://www.ilpi.com/msds/ref/energyunits.html
-	htToCm = 219_474.5459784
-	EPS    = 1e-14
-	THRESH = 1.0
-	NU     = 2.0
-	CHUNK  = 128
+	htToCm        = 219_474.5459784
+	EPS           = 1e-14
+	THRESH        = 1.0
+	NU            = 2.0
+	CHUNK         = 128
 	INFILE_SUFFIX = ".com"
 )
 
@@ -406,7 +406,7 @@ func Resubmit(job Job) Job {
 	if err != nil {
 		panic(err)
 	}
-	WritePBS(f, job.Filename, []string{inp})
+	WritePBS(f, job.Filename, []string{job.Filename + "_redo"})
 	fmt.Printf("resubmitting %s as %s\n", job.Filename, job.Filename+"_redo")
 	return Job{
 		Filename: job.Filename + "_redo",
