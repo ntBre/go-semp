@@ -1,0 +1,112 @@
+#+title: semi-empirical reparameterization
+
+* Usage
+  Basic usage of =semp= looks like:
+
+  #+begin_src shell
+    semp [name] & disown -h
+  #+end_src
+
+  If =name= is not provided, it defaults to =semp=. This will create
+  the files =name.out= and =name.log=. The output file shows the
+  finished progress of the calculation, while the log file gives very
+  verbose information about the running status. The semi-empirical
+  parameters corresponding to the results in the output file are
+  written to the file specified by the =logfile= flag which defaults
+  to =params.log=.
+
+  The rest of the behavior of =semp= is controlled by command-line
+  flags as described below. Most of these are optional, but the
+  =atoms= flag *must* be passed to specify the atom labels for the
+  geometries in the INTDER-style geometry file. Additionally, files
+  containing the following must also be available.
+
+  1. A list of geometries in INTDER format (defaults to =file07=):
+     #+begin_src text
+       # GEOMUP #################
+	      0.0000000000        0.0000000000       -1.6794733900
+	      0.0000000000        1.2524327590        0.6959098120
+	      0.0000000000       -1.2524327590        0.6959098120
+	      0.0000000000        3.0146272390        1.7138963510
+	      0.0000000000       -3.0146272390        1.7138963510
+     #+end_src
+  2. A list of the corresponding relative /ab initio/ energies
+     (defaults to =rel.dat=):
+     #+begin_src text
+       0.000000000000
+       0.000453458157
+       0.000258906149
+       0.000268926371
+       0.000247426244
+       0.000251632099
+       ...
+     #+end_src
+  3. Initial semi-empirical parameters in Gaussian style (defaults to
+     =opt.out=). The file can be a full Gaussian output file where the
+     parameters are printed or the parameters by themselves.
+     #+begin_src text
+	****
+	H
+       F0ss=0.5309794405
+       ZetaOverlap=1.2686410000
+       U=-0.4133181015
+       Beta=-0.3069665138
+       CoreKO=0.9416560451
+       GCore=0.0016794859,0.8557539975,3.3750716455
+	****
+	C
+       F0ss=0.4900713060
+       F0sp=0.4236511293
+       F0pp=0.3644399818
+       F2pp=0.1978513158
+       G1sp=0.0790832954
+       ZetaOverlap=2.0475580000,1.7028410000
+       U=-1.8775102017,-1.4676915546
+       Beta=-0.5653970197,-0.2745883383
+       CoreKO=1.0202596926
+       GCore=0.0032154960,0.5881175790,2.5208171714
+	****
+     #+end_src
+
+* Flags
+  As mentioned above, these flags control the rest of the behavior of
+  =semp=. See the final section for an example file specifying all of
+  the flags with their default values.
+
+  -atoms string
+    	specify the atom labels
+  -cpu string
+    	write a CPU profile
+  -debug
+    	toggle debugging information
+  -energies string
+    	file containing the list of training energies corresponding to -geoms (default "rel.dat")
+  -gauss string
+    	command to run gaussian (default "g16")
+  -geoms string
+    	file containing the list of geometries (default "file07")
+  -lambda float
+    	initial lambda value for levmar (default 1e-08)
+  -maxit int
+    	maximum iterations (default 250)
+  -one string
+    	run one iteration using the params in params.dat and save the results in the argument
+  -params string
+    	file containing the initial semi-empirical parameters (default "opt.out")
+
+* Example Script
+  #+begin_src shell
+    #!/bin/bash
+
+    semp -atoms         "" \
+	 -geoms     file07 \
+	 -energies rel.dat \
+	 -params   opt.out \
+	 -debug=false      \
+	 -cpu           "" \
+	 -gauss        g16 \
+	 -lambda      1e-8 \
+	 -maxit        250 \
+	 -one           "" \
+	 semp & disown -h
+  #+end_src

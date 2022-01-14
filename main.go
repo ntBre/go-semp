@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -46,23 +47,24 @@ var (
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
 	//  recommends cube root of machine eps (~2.2e16) for step
 	//  size => 6e-6; adjusting down from there
-	DELTA   = 1e-8
-	LOGFILE io.Writer
+	DELTA = 1e-8
 )
 
-/// Flags
+// Flags
 var (
+	atoms      = flag.String("atoms", "", "specify the atom labels")
+	geomFile   = flag.String("geoms", "file07", "file containing the list of geometries")
+	energyFile = flag.String("energies", "rel.dat", "file containing the list of training energies corresponding to -geoms")
+	paramFile  = flag.String("params", "opt.out", "file containing the initial semi-empirical parameters")
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
-	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
 	maxit      = flag.Int("maxit", 250, "maximum iterations")
-	one        = flag.String("one", "", "run one iteration using the "+
-		"params in params.dat and save the results in the argument")
+	one        = flag.String("one", "", "run one iteration using the params in params.dat and save the results in the argument")
 )
 
-/// Errors
+// Errors
 var (
 	ErrEnergyNotFound = errors.New("Energy not found in Gaussian output")
 	ErrFileNotFound   = errors.New("Output file not found")
@@ -379,7 +381,7 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 			Stat(&qstat)
 		}
 		time.Sleep(1 * time.Second)
-		fmt.Fprintf(LOGFILE, "%d jobs remaining\n", len(runJobs))
+		fmt.Fprintf(os.Stderr, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
 	}
 	if *debug {
@@ -432,7 +434,16 @@ func OneIter(names []string, geoms [][]float64, params []Param, outfile string) 
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
-	fmt.Printf("running with %d cpus on host: %s\n", *ncpus, host)
+	if *atoms == "" {
+		log.Fatalln("-atoms flag is required, aborting")
+	}
+	args := flag.Args()
+	infile := "semp"
+	if len(args) >= 1 {
+		infile = args[0]
+	}
+	DupOutErr(infile)
+	fmt.Printf("running on host: %s\n", host)
 	fmt.Printf("initial lambda: %.14f\n", *lambda)
 	if *debug {
 		os.Mkdir("debug", 0744)
@@ -445,9 +456,13 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	// TODO take these from input file
-	labels := []string{"C", "C", "C", "H", "H"}
-	geoms := LoadGeoms("file07")
+	// TODO take these from input file:
+	// - Atom labels : []string
+	// - geomefile : string - defaults to file07
+	// - paramfile : string - defaults to opt.out
+	// - ab initio energy file : string - defaults to rel.dat
+	labels := strings.Fields(*atoms)
+	geoms := LoadGeoms(*geomFile)
 	if *one != "" {
 		params, _ := LoadParams("params.dat")
 		OneIter(labels, geoms, params, *one)
@@ -455,10 +470,9 @@ func main() {
 	}
 	os.RemoveAll("inp")
 	os.Mkdir("inp", 0755)
-	LOGFILE, _ = os.Create("log")
 	paramLog, _ := os.Create("params.log")
-	ai := LoadEnergies("rel.dat")
-	params, num := LoadParams("opt.out")
+	ai := LoadEnergies(*energyFile)
+	params, num := LoadParams(*paramFile)
 	fmt.Printf("loaded %d params\n", num)
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
@@ -507,7 +521,7 @@ func main() {
 			se = Relative(nrg)
 			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
-			fmt.Fprintf(LOGFILE,
+			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g\n", i, *lambda)
 			// give up after 5 increases
 			if i > 4 {
@@ -529,7 +543,7 @@ func main() {
 			se = Relative(nrg)
 			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
-			fmt.Fprintf(LOGFILE, "\tk_%d to %g with Δ = %f\n",
+			fmt.Fprintf(os.Stderr, "\tk_%d to %g with Δ = %f\n",
 				i, k, norm-lastNorm)
 			prev = norm
 		}

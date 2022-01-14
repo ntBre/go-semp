@@ -5,8 +5,10 @@ import (
 	"io"
 	"math"
 	"os"
+	"path"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"gonum.org/v1/gonum/mat"
 )
@@ -114,4 +116,16 @@ func Identity(n int) *mat.Dense {
 		ret.Set(i, i, 1.0)
 	}
 	return ret
+}
+
+// DupOutErr uses syscall.Dup2 to direct the stdout and stderr streams
+// to files
+func DupOutErr(infile string) {
+	// set up output and err files and dup their fds to stdout and stderr
+	// https://github.com/golang/go/issues/325
+	base := infile[:len(infile)-len(path.Ext(infile))]
+	outfile, _ := os.Create(base + ".out")
+	errfile, _ := os.Create(base + ".log")
+	syscall.Dup2(int(outfile.Fd()), 1)
+	syscall.Dup2(int(errfile.Fd()), 2)
 }
