@@ -75,22 +75,31 @@
 
   -atoms string
     	specify the atom labels
+
   -cpu string
     	write a CPU profile
+
   -debug
     	toggle debugging information
+
   -energies string
     	file containing the list of training energies corresponding to -geoms (default "rel.dat")
+
   -gauss string
     	command to run gaussian (default "g16")
+
   -geoms string
     	file containing the list of geometries (default "file07")
+
   -lambda float
     	initial lambda value for levmar (default 1e-08)
+
   -maxit int
     	maximum iterations (default 250)
+
   -one string
     	run one iteration using the params in params.dat and save the results in the argument
+
   -params string
     	file containing the initial semi-empirical parameters (default "opt.out")
 
