@@ -56,8 +56,8 @@ var (
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	ncpus      = flag.Int("ncpus", 8, "number of cpus to use")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
-	lambda     = flag.Float64("lambda", 0.0, "initial lambda value for levmar")
-	maxit      = flag.Int("maxit", 100, "maximum iterations")
+	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
+	maxit      = flag.Int("maxit", 250, "maximum iterations")
 	one        = flag.String("one", "", "run one iteration using the "+
 		"params in params.dat and save the results in the argument")
 )
