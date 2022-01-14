@@ -61,7 +61,6 @@ var (
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
 	maxit      = flag.Int("maxit", 250, "maximum iterations")
-	one        = flag.String("one", "", "run one iteration using the params in params.dat and save the results in the argument")
 )
 
 // Errors
@@ -419,18 +418,6 @@ func Resubmit(job Job) Job {
 	}
 }
 
-func OneIter(names []string, geoms [][]float64, params []Param, outfile string) {
-	l := len(geoms)
-	nrg := mat.NewDense(l, 1, nil)
-	jobs := SEnergy(names, geoms, params, 0, None)
-	RunJobs(jobs, nrg)
-	se := Relative(nrg)
-	out, _ := os.Create(outfile)
-	for _, s := range se.RawMatrix().Data {
-		fmt.Fprintf(out, "%20.12f\n", s)
-	}
-}
-
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
@@ -463,11 +450,6 @@ func main() {
 	// - ab initio energy file : string - defaults to rel.dat
 	labels := strings.Fields(*atoms)
 	geoms := LoadGeoms(*geomFile)
-	if *one != "" {
-		params, _ := LoadParams("params.dat")
-		OneIter(labels, geoms, params, *one)
-		os.Exit(0)
-	}
 	os.RemoveAll("inp")
 	os.Mkdir("inp", 0755)
 	paramLog, _ := os.Create("params.log")
