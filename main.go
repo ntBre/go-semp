@@ -443,11 +443,6 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	// TODO take these from input file:
-	// - Atom labels : []string
-	// - geomefile : string - defaults to file07
-	// - paramfile : string - defaults to opt.out
-	// - ab initio energy file : string - defaults to rel.dat
 	labels := strings.Fields(*atoms)
 	geoms := LoadGeoms(*geomFile)
 	os.RemoveAll("inp")
