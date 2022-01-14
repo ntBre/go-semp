@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -74,8 +76,10 @@ func LoadParams(filename string) (ret []Param, num int) {
 		inparam bool
 		param   Param
 	)
+	blank := regexp.MustCompile(`^ *$`)
 	for scanner.Scan() {
 		line = scanner.Text()
+		fmt.Println(line)
 		fields = strings.Fields(line)
 		switch {
 		case line == " ****":
@@ -85,7 +89,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 				ret = append(ret, param)
 			}
 			param = Param{}
-		case inparam && line == " ":
+		case inparam && blank.MatchString(line):
 			inparam = false
 			return
 		case inparam && first:

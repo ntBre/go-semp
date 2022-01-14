@@ -53,37 +53,79 @@ func TestLoadEnergies(t *testing.T) {
 }
 
 func TestLoadParams(t *testing.T) {
-	got, _ := LoadParams("testfiles/opt.out")
-	want := []Param{
+	tests := []struct {
+		infile string
+		want   []Param
+	}{
 		{
-			"H",
-			[]string{
-				"F0ss", "ZetaOverlap", "U", "Beta", "CoreKO",
-				"GCore", "GCore", "GCore",
-			},
-			[]float64{
-				0.5309794405, 1.268641, -0.4133181015,
-				-0.3069665138, 0.9416560451, 0.0016794859,
-				0.8557539975, 3.3750716455,
+			infile: "testfiles/opt.out",
+			want: []Param{
+				{
+					"H",
+					[]string{
+						"F0ss", "ZetaOverlap", "U", "Beta", "CoreKO",
+						"GCore", "GCore", "GCore",
+					},
+					[]float64{
+						0.5309794405, 1.268641, -0.4133181015,
+						-0.3069665138, 0.9416560451, 0.0016794859,
+						0.8557539975, 3.3750716455,
+					},
+				},
+				{
+					"C",
+					[]string{"F0ss", "F0sp", "F0pp", "F2pp", "G1sp",
+						"ZetaOverlap", "ZetaOverlap", "U", "U",
+						"Beta", "Beta", "CoreKO", "GCore", "GCore",
+						"GCore",
+					},
+					[]float64{
+						0.490071306, 0.4236511293, 0.3644399818,
+						0.1978513158, 0.0790832954, 2.047558,
+						1.702841, -1.8775102017, -1.4676915546,
+						-0.5653970197, -0.2745883383, 1.0202596926,
+						0.003215496, 0.588117579, 2.5208171714,
+					},
+				},
 			},
 		},
 		{
-			"C",
-			[]string{"F0ss", "F0sp", "F0pp", "F2pp", "G1sp",
-				"ZetaOverlap", "ZetaOverlap", "U", "U",
-				"Beta", "Beta", "CoreKO", "GCore", "GCore",
-				"GCore",
-			},
-			[]float64{
-				0.490071306, 0.4236511293, 0.3644399818,
-				0.1978513158, 0.0790832954, 2.047558,
-				1.702841, -1.8775102017, -1.4676915546,
-				-0.5653970197, -0.2745883383, 1.0202596926,
-				0.003215496, 0.588117579, 2.5208171714,
+			infile: "testfiles/params.dat",
+			want: []Param{
+				{
+					"H",
+					[]string{
+						"F0ss", "ZetaOverlap", "U", "Beta", "CoreKO",
+						"GCore", "GCore", "GCore",
+					},
+					[]float64{
+						0.5309794405, 1.268641, -0.4133181015,
+						-0.3069665138, 0.9416560451, 0.0016794859,
+						0.8557539975, 3.3750716455,
+					},
+				},
+				{
+					"C",
+					[]string{"F0ss", "F0sp", "F0pp", "F2pp", "G1sp",
+						"ZetaOverlap", "ZetaOverlap", "U", "U",
+						"Beta", "Beta", "CoreKO", "GCore", "GCore",
+						"GCore",
+					},
+					[]float64{
+						0.490071306, 0.4236511293, 0.3644399818,
+						0.1978513158, 0.0790832954, 2.047558,
+						1.702841, -1.8775102017, -1.4676915546,
+						-0.5653970197, -0.2745883383, 1.0202596926,
+						0.003215496, 0.588117579, 2.5208171714,
+					},
+				},
 			},
 		},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, wanted %v\n", got, want)
+	for _, test := range tests {
+		got, _ := LoadParams(test.infile)
+		if !reflect.DeepEqual(got, test.want) {
+			t.Errorf("got %v, wanted %v\n", got, test.want)
+		}
 	}
 }
