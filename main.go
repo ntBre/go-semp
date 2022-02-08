@@ -141,13 +141,17 @@ the title
 	}
 	var b bytes.Buffer
 	WriteParams(&b, params)
-	anon := struct {
-		Charge int
-		Spin   int
+	t.Execute(w, struct {
 		Geom   string
 		Params string
-	}{CHARGE, SPIN, geom, b.String()}
-	t.Execute(w, anon)
+		Charge int
+		Spin   int
+	}{
+		Charge: CHARGE,
+		Spin:   SPIN,
+		Geom:   geom,
+		Params: b.String(),
+	})
 }
 
 // monotonically increasing counter for job names
@@ -196,8 +200,9 @@ func SEnergy(names []string, geoms [][]float64, params []Param, col int, calc Ty
 // information.
 type Job struct {
 	Filename string
-	I, J     int
 	Jobid    string
+	I        int
+	J        int
 	Coeff    float64
 }
 
