@@ -53,6 +53,7 @@ func TestLoadEnergies(t *testing.T) {
 }
 
 func TestLoadParams(t *testing.T) {
+	delete(DERIVED_PARAMS, "GCore")
 	tests := []struct {
 		infile string
 		want   []Param

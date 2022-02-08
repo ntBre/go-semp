@@ -42,6 +42,9 @@ func TestLen(t *testing.T) {
 	p, _ := LoadParams("testfiles/opt.out")
 	got := Len(p)
 	want := 23
+	if _, ok := DERIVED_PARAMS["GCore"]; ok {
+		want = 17
+	}
 	if got != want {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}

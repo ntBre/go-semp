@@ -36,11 +36,10 @@ var (
 		"DDN":      {},
 		"KON":      {},
 		"EISol":    {},
-		// Adding these trying to make matrix not singular
 		"DCore":  {},
 		"EHeat":  {},
 		"DipHyp": {},
-		// "GCore":  {},
+		"GCore":  {},
 	}
 	CHARGE = 0
 	SPIN   = 1
