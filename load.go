@@ -79,7 +79,6 @@ func LoadParams(filename string) (ret []Param, num int) {
 	blank := regexp.MustCompile(`^ *$`)
 	for scanner.Scan() {
 		line = scanner.Text()
-		fmt.Println(line)
 		fields = strings.Fields(line)
 		switch {
 		case line == " ****":

@@ -478,7 +478,7 @@ func main() {
 	lastNorm = norm
 	lastRMSD = rmsd
 	start := time.Now()
-	for iter < *maxit && norm > THRESH {
+	for iter <= *maxit && norm > THRESH {
 		jac := NumJac(labels, geoms, params)
 		*lambda /= NU
 		// BEGIN copy-paste
