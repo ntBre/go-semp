@@ -116,7 +116,6 @@ func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
 	geom := ZipGeom(names, coords)
 	t, err := template.New("com").Parse(
 		`XYZ A0 scfcrt=1.D-21 aux(precision=14) external={{.Name}} 1SCF charge={{.Charge}} PM6
@@ -129,6 +128,10 @@ blank line
 		panic(err)
 	}
 	WriteParams(f, params)
+	err = f.Close()
+	if err != nil {
+		panic(err)
+	}
 	abs, err := filepath.Abs(f.Name())
 	if err != nil {
 		panic(err)
@@ -244,7 +247,13 @@ func cleanup() {
 	if err := os.RemoveAll("inp"); err != nil {
 		panic(err)
 	}
+	if err := os.RemoveAll("tmparam"); err != nil {
+		panic(err)
+	}
 	if err := os.Mkdir("inp", 0744); err != nil {
+		panic(err)
+	}
+	if err := os.Mkdir("tmparam", 0744); err != nil {
 		panic(err)
 	}
 }
@@ -267,6 +276,8 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	return ret
 }
 
+// TODO might need to take a look at the Jacobian to identify more
+// variables to take out
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	// LHS
 	var prod mat.Dense
