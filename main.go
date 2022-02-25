@@ -41,6 +41,12 @@ var (
 		"EISOL": {},
 		"CORE":  {},
 		"EHEAT": {},
+		// TODO consider skipping these. not derived but
+		// symmetric and hard to deal with. I also skipped
+		// them in gaussian under the name DCore
+
+		// "ALPB_": {},
+		// "XFAC_": {},
 	}
 	CHARGE = 0
 	SPIN   = 1

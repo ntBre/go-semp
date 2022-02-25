@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -78,14 +79,16 @@ func LoadParams(filename string) (ret []Param, num int) {
 		skip    int
 	)
 	blank := regexp.MustCompile(`^ *$`)
-	gap := regexp.MustCompile(`(ALPB|XFAC)_ `)
+	gap := regexp.MustCompile(`(ALPB|XFAC)_ ?(\d+)`)
 	// TODO might need to deduplicate symmetrical terms like 1
 	// XFAC_6 vs 6 XFAC_1
 	for scanner.Scan() {
 		line = scanner.Text()
 		fields = strings.Fields(line)
 		if gap.MatchString(line) {
-			line = gap.ReplaceAllString(line, "${1}_")
+			atom_num := gap.FindStringSubmatch(line)[2]
+			repl := fmt.Sprintf("${1}_%s", ATOMIC_NUMBERS[atom_num])
+			line = gap.ReplaceAllString(line, repl)
 			fields = strings.Fields(line)
 		}
 		switch {
