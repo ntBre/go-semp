@@ -504,12 +504,14 @@ func main() {
 			newParams := LevMar(jac, ai, se, params, 1.0)
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
+			fmt.Fprintln(os.Stderr, "increasing ν")
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
 			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
 			fmt.Fprintf(os.Stderr,
-				"\tλ_%d to %g\n", i, *lambda)
+				"\tλ_%d to %g with ΔNorm = %f\n",
+				i, *lambda, norm-lastNorm)
 			// give up after 5 increases
 			if i > 4 {
 				// case iii. failed, try footnote
@@ -530,7 +532,8 @@ func main() {
 			se = Relative(nrg)
 			norm, max = Norm(ai, se)
 			rmsd = RMSD(ai, se) * htToCm
-			fmt.Fprintf(os.Stderr, "\tk_%d to %g with Δ = %f\n",
+			fmt.Fprintf(os.Stderr,
+				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
 			prev = norm
 		}
