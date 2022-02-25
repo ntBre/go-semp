@@ -47,8 +47,10 @@ func ZipGeom(names []string, coords []float64) string {
 	var geom strings.Builder
 	for i := range names {
 		fmt.Fprintf(&geom, "%s%20.12f%20.12f%20.12f\n",
-			names[i], coords[3*i]*toAng,
-			coords[3*i+1]*toAng, coords[3*i+2]*toAng,
+			names[i],
+			coords[3*i],
+			coords[3*i+1],
+			coords[3*i+2],
 		)
 	}
 	return geom.String()

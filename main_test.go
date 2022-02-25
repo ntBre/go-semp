@@ -18,8 +18,8 @@ func charComp(got, want string) {
 			return
 		}
 		if got[c] != want[c] {
-			fmt.Printf("got %s, wanted %s\n",
-				got[:c], want[:c])
+			fmt.Printf("got\n%q, wanted\n%q\n",
+				got[:c+1], want[:c+1])
 			return
 		}
 	}
@@ -84,16 +84,15 @@ func TestWriteCom(t *testing.T) {
 	want := `XYZ A0 scfcrt=1.D-21 aux(precision=14) external=tmparam/1598109253 1SCF charge=0 PM6
 blank line
 blank line
-
-C      0.000000000000      0.000000000000     -0.888739044306
-C      0.000000000000      0.662758874251      0.368259613354
-C      0.000000000000     -0.662758874251      0.368259613354
-H      0.000000000000      1.595272034246      0.906954890799
-H      0.000000000000     -1.595272034246      0.906954890799
+C      0.000000000000      0.000000000000     -1.679473390000
+C      0.000000000000      1.252432759000      0.695909812000
+C      0.000000000000     -1.252432759000      0.695909812000
+H      0.000000000000      3.014627239000      1.713896351000
+H      0.000000000000     -3.014627239000      1.713896351000
 
 
 `
-	random := regexp.MustCompile(`(external=tmparam/)[^ ]+`)
+	random := regexp.MustCompile(`(external=)/?.*tmparam/[^ ]+`)
 	got = random.ReplaceAllString(got, "$1")
 	want = random.ReplaceAllString(want, "$1")
 	if got != want {

@@ -2,29 +2,75 @@ package main
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-func ParseGaussian(filename string) (ret float64, err error) {
+const (
+	KCALHT = 627.5091809 // kcal/mol per hartree
+)
+
+func TrimExt(filename string) string {
+	lext := len(filepath.Ext(filename))
+	return filename[:len(filename)-lext]
+}
+
+func ReadOut(filename string) (energy float64, err error) {
 	f, err := os.Open(filename)
 	defer f.Close()
 	if err != nil {
-		return ret, ErrFileNotFound
+		err = ErrFileNotFound
+		return
 	}
 	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if strings.Contains(scanner.Text(), "SCF Done") {
-			fields := strings.Fields(scanner.Text())
-			ret, err = strconv.ParseFloat(fields[4], 64)
-			if err != nil {
-				fmt.Printf("error parsing %q\n", fields)
-				panic(err)
-			}
+	err = ErrEnergyNotFound
+	var (
+		line   string
+		fields []string
+		i      int
+	)
+	for i = 0; scanner.Scan(); i++ {
+		line = scanner.Text()
+		switch {
+		case i == 0 && strings.Contains(strings.ToUpper(line), "PANIC"):
+			panic("panic requested in output file")
+		case i == 0 && strings.Contains(strings.ToUpper(line), "ERROR"):
+			err = errors.New("file contains error")
 			return
+		case strings.Contains(line, "== MOPAC DONE =="):
+			break
 		}
 	}
-	return ret, ErrEnergyNotFound
+	if i == 0 {
+		err = errors.New("blank output")
+		return
+	}
+	// should I close old f first? what about deferring double
+	// close?
+	auxfile := TrimExt(filename) + ".aux"
+	f, err = os.Open(auxfile)
+	defer f.Close()
+	if err != nil {
+		err = ErrFileNotFound
+		return
+	}
+	err = ErrEnergyNotFound
+	scanner = bufio.NewScanner(f)
+	for scanner.Scan() {
+		line = scanner.Text()
+		switch {
+		case strings.Contains(line, "HEAT_OF_FORMATION"):
+			fields = strings.Split(line, "=")
+			strVal := fields[1]
+			energy, err = strconv.ParseFloat(
+				strings.Replace(strVal, "D", "E", -1),
+				64,
+			)
+			energy /= KCALHT
+		}
+	}
+	return
 }

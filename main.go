@@ -122,7 +122,6 @@ func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 		`XYZ A0 scfcrt=1.D-21 aux(precision=14) external={{.Name}} 1SCF charge={{.Charge}} PM6
 blank line
 blank line
-
 {{.Geom}}
 
 `)
@@ -130,6 +129,10 @@ blank line
 		panic(err)
 	}
 	WriteParams(f, params)
+	abs, err := filepath.Abs(f.Name())
+	if err != nil {
+		panic(err)
+	}
 	t.Execute(w, struct {
 		Geom   string
 		Name   string
@@ -137,7 +140,7 @@ blank line
 	}{
 		Charge: CHARGE,
 		Geom:   geom,
-		Name:   f.Name(),
+		Name:   abs,
 	})
 }
 
@@ -345,7 +348,7 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 	for len(runJobs) > 0 {
 		for i := 0; i < len(runJobs); i++ {
 			job := runJobs[i]
-			energy, err := ParseGaussian(
+			energy, err := ReadOut(
 				filepath.Join("inp", job.Filename+".out"),
 			)
 			if err == nil {
