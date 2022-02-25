@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -86,10 +85,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 		line = scanner.Text()
 		fields = strings.Fields(line)
 		if gap.MatchString(line) {
-			atom_num := gap.FindStringSubmatch(line)[2]
-			repl := fmt.Sprintf("${1}_%s", ATOMIC_NUMBERS[atom_num])
-			line = gap.ReplaceAllString(line, repl)
-			fields = strings.Fields(line)
+			continue
 		}
 		switch {
 		case skip > 0:

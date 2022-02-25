@@ -41,15 +41,6 @@ var (
 		"EISOL": {},
 		"CORE":  {},
 		"EHEAT": {},
-		// TODO consider skipping these. not derived but
-		// symmetric and hard to deal with. I also skipped
-		// them in gaussian under the name DCore. Only the
-		// cross terms are symmetric obviously, so I might
-		// have to handle this skip elsewhere. doesn't fit
-		// cleanly in this map
-
-		// "ALPB_": {},
-		// "XFAC_": {},
 	}
 	CHARGE = 0
 	SPIN   = 1
