@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,21 +24,23 @@ const (
 	THRESH        = 1.0
 	NU            = 2.0
 	CHUNK         = 128
-	INFILE_SUFFIX = ".com"
+	INFILE_SUFFIX = ".mop"
 )
 
 var (
 	// set representing derived semi-empirical parameters
 	DERIVED_PARAMS = map[string]struct{}{
-		"PQN":      {},
-		"NValence": {},
-		"DDN":      {},
-		"KON":      {},
-		"EISol":    {},
-		"DCore":  {},
-		"EHeat":  {},
-		"DipHyp": {},
-		"GCore":  {},
+		"DD2":   {},
+		"DD3":   {},
+		"=":     {},
+		"PO1":   {},
+		"PO2":   {},
+		"PO3":   {},
+		"PO7":   {},
+		"PO9":   {},
+		"EISOL": {},
+		"CORE":  {},
+		"EHEAT": {},
 	}
 	CHARGE = 0
 	SPIN   = 1
@@ -83,29 +84,17 @@ func (p Params) Values() (ret []float64) {
 	return
 }
 
-// WriteParams formats params for use in a Gaussian input file and
+// WriteParams formats params for use in a MOPAC input file and
 // writes them to w
 func WriteParams(w io.Writer, params []Param) {
 	for _, param := range params {
-		fmt.Fprintf(w, " ****\n%2s", param.Atom)
-		var last, sep string
 		for i, name := range param.Names {
-			if strings.Contains(name, "DCore") {
-				sep = ","
-			} else {
-				sep = "="
-			}
-			if name == last {
-				fmt.Fprintf(w, ",%.10f", param.Values[i])
-			} else {
-				fmt.Fprintf(w, "\n%s%s%.10f",
-					name, sep, param.Values[i])
-				last = name
-			}
+			fmt.Fprintf(w, "%-8s%8s%20.12f\n",
+				name, param.Atom, param.Values[i],
+			)
 		}
-		fmt.Fprint(w, "\n")
 	}
-	fmt.Fprint(w, " ****\n\n")
+	fmt.Fprint(w, "\n")
 }
 
 func LogParams(w io.Writer, params []Param, iter int) {
@@ -123,33 +112,32 @@ func DumpParams(params []Param, filename string) {
 }
 
 func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
+	f, err := os.CreateTemp("tmparam", "")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
 	geom := ZipGeom(names, coords)
-	t, err := template.New("com").Parse(`%mem=1000mb
-%nprocs=1
-#P PM6=(print,zero,input)
+	t, err := template.New("com").Parse(
+		`XYZ A0 scfcrt=1.D-21 aux(precision=14) external={{.Name}} 1SCF charge={{.Charge}} PM6
+blank line
+blank line
 
-the title
-
-{{.Charge}} {{.Spin}}
 {{.Geom}}
-{{.Params}}
 
 `)
 	if err != nil {
 		panic(err)
 	}
-	var b bytes.Buffer
-	WriteParams(&b, params)
+	WriteParams(f, params)
 	t.Execute(w, struct {
 		Geom   string
-		Params string
+		Name   string
 		Charge int
-		Spin   int
 	}{
 		Charge: CHARGE,
-		Spin:   SPIN,
 		Geom:   geom,
-		Params: b.String(),
+		Name:   f.Name(),
 	})
 }
 
@@ -440,6 +428,9 @@ func main() {
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
+	// make a tmp directory for the params
+	os.MkdirAll("tmparam", 0744)
+	defer os.RemoveAll("tmparam")
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {

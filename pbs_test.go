@@ -21,8 +21,13 @@ func TestWritePBS(t *testing.T) {
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 
-/home/qc/bin/g16b01.sh input1.com
-/home/qc/bin/g16b01.sh input2.com
+export LD_LIBRARY_PATH=/home/qc/mopac2016/
+
+hostname
+date
+/home/qc/mopac2016/MOPAC2016.exe input1.mop
+/home/qc/mopac2016/MOPAC2016.exe input2.mop
+date
 `
 	if got != want {
 		t.Errorf("got\n%#+v, wanted\n%#+v\n", got, want)

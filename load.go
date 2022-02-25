@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -59,8 +60,8 @@ func LoadEnergies(filename string) *mat.Dense {
 	return mat.NewDense(len(ret), 1, ret)
 }
 
-// LoadParams extracts semi-empirical parameters from a Gaussian
-// output file
+// LoadParams extracts semi-empirical parameters from a MOPAC output
+// file
 func LoadParams(filename string) (ret []Param, num int) {
 	f, err := os.Open(filename)
 	defer f.Close()
@@ -74,50 +75,52 @@ func LoadParams(filename string) (ret []Param, num int) {
 		first   bool
 		inparam bool
 		param   Param
+		skip    int
 	)
 	blank := regexp.MustCompile(`^ *$`)
+	gap := regexp.MustCompile(`(ALPB|XFAC)_ `)
+	// TODO might need to deduplicate symmetrical terms like 1
+	// XFAC_6 vs 6 XFAC_1
 	for scanner.Scan() {
 		line = scanner.Text()
 		fields = strings.Fields(line)
+		if gap.MatchString(line) {
+			line = gap.ReplaceAllString(line, "${1}_")
+			fields = strings.Fields(line)
+		}
 		switch {
-		case line == " ****":
+		case skip > 0:
+			skip--
+		case strings.Contains(line, "MATRIX FROM HCORE"):
+			return
+		case strings.Contains(line, "PARAMETER VALUES USED"):
+			skip = 4
 			inparam = true
 			first = true
+			param = Param{}
+		case inparam && blank.MatchString(line):
 			if param.Atom != "" {
 				ret = append(ret, param)
 			}
+			first = true
 			param = Param{}
-		case inparam && blank.MatchString(line):
-			inparam = false
-			return
 		case inparam && first:
-			param.Atom = fields[0]
+			param.Atom = ATOMIC_NUMBERS[fields[0]]
 			first = false
+			fallthrough
 		case inparam:
-			for _, f := range fields {
-				split := strings.Split(f, "=")
-				if _, ok := DERIVED_PARAMS[split[0]]; ok {
-					continue
-				}
-				name := split[0]
-				vals := strings.Split(split[1], ",")
-				if name == "DCore" {
-					name += "=" + vals[0] + "," + vals[1]
-					vals = vals[2:]
-				}
-				for _, val := range vals {
-					v, err := strconv.ParseFloat(val, 64)
-					if err != nil {
-						panic(err)
-					}
-					// skip zero params for now
-					if v != 0.0 {
-						param.Names = append(param.Names, name)
-						param.Values = append(param.Values, v)
-						num++
-					}
-				}
+			if _, ok := DERIVED_PARAMS[fields[1]]; ok {
+				continue
 			}
+			param.Names = append(param.Names, fields[1])
+			v, err := strconv.ParseFloat(fields[2], 64)
+			if err != nil {
+				log.Fatalf("failed to parse %q as float",
+					fields[2],
+				)
+			}
+			param.Values = append(param.Values, v)
+			num++
 		}
 	}
 	return

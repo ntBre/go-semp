@@ -2,45 +2,76 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"regexp"
 	"testing"
 )
+
+func charComp(got, want string) {
+	for c := range got {
+		if len(got) <= c {
+			fmt.Println("got too short")
+			return
+		} else if len(want) <= c {
+			fmt.Println("want too short")
+			return
+		}
+		if got[c] != want[c] {
+			fmt.Printf("got %s, wanted %s\n",
+				got[:c], want[:c])
+			return
+		}
+	}
+}
 
 func TestWriteParams(t *testing.T) {
 	var b bytes.Buffer
 	p, _ := LoadParams("testfiles/opt.out")
 	WriteParams(&b, p)
 	got := b.String()
-	want := ` ****
- H
-F0ss=0.5309794405
-ZetaOverlap=1.2686410000
-U=-0.4133181015
-Beta=-0.3069665138
-CoreKO=0.9416560451
-GCore=0.0016794859,0.8557539975,3.3750716455
- ****
- C
-F0ss=0.4900713060
-F0sp=0.4236511293
-F0pp=0.3644399818
-F2pp=0.1978513158
-G1sp=0.0790832954
-ZetaOverlap=2.0475580000,1.7028410000
-U=-1.8775102017,-1.4676915546
-Beta=-0.5653970197,-0.2745883383
-CoreKO=1.0202596926
-GCore=0.0032154960,0.5881175790,2.5208171714
- ****
+	want := `USS            H    -11.246958000000
+ZS             H      1.268641000000
+BETAS          H     -8.352984000000
+GSS            H     14.448686000000
+FN11           H      0.024184000000
+FN21           H      3.055953000000
+FN31           H      1.786011000000
+ALPB_1         H      3.540942000000
+XFAC_1         H      2.243587000000
+ALPB_6         H      1.027806000000
+XFAC_6         H      0.216506000000
+USS            C    -51.089653000000
+UPP            C    -39.937920000000
+ZS             C      2.047558000000
+ZP             C      1.702841000000
+BETAS          C    -15.385236000000
+BETAP          C     -7.471929000000
+GSS            C     13.335519000000
+GPP            C     10.778326000000
+GSP            C     11.528134000000
+GP2            C      9.486212000000
+HSP            C      0.717322000000
+FN11           C      0.046302000000
+FN21           C      2.100206000000
+FN31           C      1.333959000000
+ALPB_1         C      1.027806000000
+XFAC_1         C      0.216506000000
+ALPB_6         C      2.613713000000
+XFAC_6         C      0.813510000000
 
 `
 	if got != want {
-		t.Errorf("got %v, wanted %v\n", got, want)
+		charComp(got, want)
+		t.Errorf("got\n%#v, wanted\n%#v\n", got, want)
 	}
 }
 
 func TestWriteCom(t *testing.T) {
 	var b bytes.Buffer
 	p, _ := LoadParams("testfiles/opt.out")
+	os.MkdirAll("tmparam", 0744)
+	defer os.RemoveAll("tmparam")
 	WriteCom(&b, []string{"C", "C", "C", "H", "H"},
 		[]float64{
 			0.0000000000, 0.0000000000, -1.6794733900,
@@ -50,45 +81,23 @@ func TestWriteCom(t *testing.T) {
 			0.0000000000, -3.0146272390, 1.7138963510,
 		}, p)
 	got := b.String()
-	want := `%mem=1000mb
-%nprocs=1
-#P PM6=(print,zero,input)
+	want := `XYZ A0 scfcrt=1.D-21 aux(precision=14) external=tmparam/1598109253 1SCF charge=0 PM6
+blank line
+blank line
 
-the title
-
-0 1
 C      0.000000000000      0.000000000000     -0.888739044306
 C      0.000000000000      0.662758874251      0.368259613354
 C      0.000000000000     -0.662758874251      0.368259613354
 H      0.000000000000      1.595272034246      0.906954890799
 H      0.000000000000     -1.595272034246      0.906954890799
 
- ****
- H
-F0ss=0.5309794405
-ZetaOverlap=1.2686410000
-U=-0.4133181015
-Beta=-0.3069665138
-CoreKO=0.9416560451
-GCore=0.0016794859,0.8557539975,3.3750716455
- ****
- C
-F0ss=0.4900713060
-F0sp=0.4236511293
-F0pp=0.3644399818
-F2pp=0.1978513158
-G1sp=0.0790832954
-ZetaOverlap=2.0475580000,1.7028410000
-U=-1.8775102017,-1.4676915546
-Beta=-0.5653970197,-0.2745883383
-CoreKO=1.0202596926
-GCore=0.0032154960,0.5881175790,2.5208171714
- ****
-
-
 
 `
+	random := regexp.MustCompile(`(external=tmparam/)[^ ]+`)
+	got = random.ReplaceAllString(got, "$1")
+	want = random.ReplaceAllString(want, "$1")
 	if got != want {
+		charComp(got, want)
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
