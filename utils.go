@@ -83,7 +83,7 @@ func DumpVec(a *mat.Dense) {
 		panic("more than one column in expected vector")
 	}
 	for i := 0; i < r; i++ {
-		fmt.Printf("%5d%20.12f\n", i, a.At(i, 0))
+		fmt.Fprintf(os.Stderr, "%5d%20.12f\n", i, a.At(i, 0))
 	}
 }
 

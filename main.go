@@ -41,6 +41,10 @@ var (
 		"EISOL": {},
 		"CORE":  {},
 		"EHEAT": {},
+		// not derived, but singular for H
+		"FN11": {},
+		"FN21": {},
+		"FN31": {},
 	}
 	CHARGE = 0
 	SPIN   = 1
