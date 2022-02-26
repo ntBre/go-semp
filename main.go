@@ -164,7 +164,8 @@ const (
 
 // SEnergy returns the list of jobs needed to compute the desired
 // semi-empirical energies after writing the Gaussian input files
-func SEnergy(names []string, geoms [][]float64, params []Param, col int, calc Type) []Job {
+func SEnergy(names []string, geoms [][]float64, params []Param, col int,
+	calc Type) []Job {
 	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
 		name := fmt.Sprintf("inp/job.%010d", counter)
@@ -205,7 +206,8 @@ type Job struct {
 
 // CentralDiff returns a list of Jobs needed to compute the ith column
 // of the numerical Jacobian
-func CentralDiff(names []string, geoms [][]float64, params []Param, p, i, col int) []Job {
+func CentralDiff(names []string, geoms [][]float64, params []Param,
+	p, i, col int) []Job {
 	params[p].Values[i] += DELTA
 	fwdJobs := SEnergy(names, geoms, params, col, Fwd)
 
@@ -229,12 +231,14 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	for p := range params {
 		for i := range params[p].Values {
 			if *debug {
-				fmt.Printf("before:%12.9f\n", Params(params).Values())
+				fmt.Printf("before:%12.9f\n",
+					Params(params).Values())
 			}
 			jobs = append(jobs,
 				CentralDiff(names, geoms, params, p, i, col)...)
 			if *debug {
-				fmt.Printf(" after:%12.9f\n", Params(params).Values())
+				fmt.Printf(" after:%12.9f\n",
+					Params(params).Values())
 			}
 			col++
 		}
@@ -384,7 +388,8 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 			if err == nil {
 				shortened++
 				if *debug {
-					check.Set(job.I, job.J, check.At(job.I, job.J)+1)
+					check.Set(job.I, job.J,
+						check.At(job.I, job.J)+1)
 				}
 				target.Set(job.I, job.J,
 					target.At(job.I, job.J)+
