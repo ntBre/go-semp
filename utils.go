@@ -88,7 +88,7 @@ func DumpVec(a *mat.Dense) {
 }
 
 func DumpMat(m mat.Matrix) {
-	WriteMat(os.Stdout, m)
+	WriteMat(os.Stderr, m)
 }
 
 func DumpJac(m mat.Matrix) {

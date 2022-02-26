@@ -308,17 +308,20 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	var step mat.Dense
 	err := step.Solve(&sum, &prod2)
 	if err != nil {
-		fmt.Println("jacT")
-		DumpMat(jac.T())
-		fmt.Println("prod")
+		fmt.Fprintln(os.Stderr, "jac")
+		DumpMat(jac)
+		fmt.Fprintln(os.Stderr, "prod")
 		DumpMat(&prod)
-		fmt.Println("diff")
+		fmt.Fprintln(os.Stderr, "diff")
 		DumpVec(&diff)
-		fmt.Println("prod2")
+		fmt.Fprintln(os.Stderr, "prod2")
 		DumpMat(&prod2)
-		fmt.Println("step")
+		fmt.Fprintln(os.Stderr, "step")
 		DumpVec(&step)
-		panic(err)
+		if strings.Contains(err.Error(), "Inf") {
+			panic(err)
+		}
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 	return UpdateParams(params, &step, scale)
 }
@@ -516,7 +519,6 @@ func main() {
 			newParams := LevMar(jac, ai, se, params, 1.0)
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
-			fmt.Fprintln(os.Stderr, "increasing ν")
 			RunJobs(jobs, nrg)
 			se = Relative(nrg)
 			norm, max = Norm(ai, se)
