@@ -596,7 +596,7 @@ func main() {
 				break
 			}
 			if i > 0 && gamma > lastGamma {
-				log.Fatalf(
+				log.Printf(
 					"gamma monotonicity violated by %g\n",
 					gamma-lastGamma,
 				)
