@@ -41,7 +41,7 @@ func TestSub(t *testing.T) {
 func TestLen(t *testing.T) {
 	p, _ := LoadParams("testfiles/opt.out")
 	got := Len(p)
-	want := 21
+	want := 15
 	if got != want {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,15 +57,19 @@ var (
 
 // Flags
 var (
-	atoms      = flag.String("atoms", "", "specify the atom labels")
-	geomFile   = flag.String("geoms", "file07", "file containing the list of geometries")
-	energyFile = flag.String("energies", "rel.dat", "file containing the list of training energies corresponding to -geoms")
-	paramFile  = flag.String("params", "opt.out", "file containing the initial semi-empirical parameters")
+	atoms    = flag.String("atoms", "", "specify the atom labels")
+	geomFile = flag.String("geoms", "file07",
+		"file containing the list of geometries")
+	energyFile = flag.String("energies", "rel.dat",
+		"file containing the training energies corresponding to -geoms")
+	paramFile = flag.String("params", "opt.out",
+		"file containing the initial semi-empirical parameters")
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
-	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
-	maxit      = flag.Int("maxit", 250, "maximum iterations")
+	lambda     = flag.Float64("lambda", 1e-8,
+		"initial lambda value for levmar")
+	maxit = flag.Int("maxit", 250, "maximum iterations")
 )
 
 // Errors
@@ -90,15 +95,17 @@ func (p Params) Values() (ret []float64) {
 
 // WriteParams formats params for use in a MOPAC input file and
 // writes them to w
-func WriteParams(w io.Writer, params []Param) {
+func WriteParams(w io.Writer, params []Param) error {
+	nw := bufio.NewWriter(w)
 	for _, param := range params {
 		for i, name := range param.Names {
-			fmt.Fprintf(w, "%-8s%8s%20.12f\n",
+			fmt.Fprintf(nw, "%-8s%8s%20.12f\n",
 				name, param.Atom, param.Values[i],
 			)
 		}
 	}
-	fmt.Fprint(w, "\n")
+	fmt.Fprint(nw, "\n")
+	return nw.Flush()
 }
 
 func LogParams(w io.Writer, params []Param, iter int) {

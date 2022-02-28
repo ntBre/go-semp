@@ -6,6 +6,9 @@ import (
 	"os"
 	"regexp"
 	"testing"
+	"text/template"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 func charComp(got, want string) {
@@ -34,9 +37,6 @@ func TestWriteParams(t *testing.T) {
 ZS             H      1.268641000000
 BETAS          H     -8.352984000000
 GSS            H     14.448686000000
-FN11           H      0.024184000000
-FN21           H      3.055953000000
-FN31           H      1.786011000000
 USS            C    -51.089653000000
 UPP            C    -39.937920000000
 ZS             C      2.047558000000
@@ -48,9 +48,6 @@ GPP            C     10.778326000000
 GSP            C     11.528134000000
 GP2            C      9.486212000000
 HSP            C      0.717322000000
-FN11           C      0.046302000000
-FN21           C      2.100206000000
-FN31           C      1.333959000000
 
 `
 	if got != want {
@@ -91,4 +88,49 @@ H      0.000000000000     -3.014627239000      1.713896351000
 		charComp(got, want)
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
+}
+
+func TestMain(t *testing.T) {
+	if !testing.Short() {
+		t.Skip()
+	}
+	labels := []string{"C", "C", "C", "H", "H"}
+	geoms := LoadGeoms("testfiles/file07")
+	os.RemoveAll("inp")
+	os.Mkdir("inp", 0755)
+	defer os.RemoveAll("inp")
+	os.MkdirAll("tmparam", 0744)
+	defer os.RemoveAll("tmparam")
+	ai := LoadEnergies("testfiles/rel.dat")
+	params, _ := LoadParams("testfiles/opt.out")
+	nrg := mat.NewDense(len(geoms), 1, nil)
+	jobs := SEnergy(labels, geoms, params, 0, None)
+	tmp := PBS_TEMPLATE
+	var err error
+	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cmd := SUBMIT_CMD
+	SUBMIT_CMD = "bash"
+	defer func() {
+		PBS_TEMPLATE = tmp
+		SUBMIT_CMD = cmd
+	}()
+	RunJobs(jobs, nrg)
+	se := Relative(nrg)
+	norm, max := Norm(ai, se)
+	rmsd := RMSD(ai, se) * htToCm
+	var (
+		iter     int
+		lastNorm float64
+		lastRMSD float64
+	)
+	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, 0.0)
+	DumpVec(nrg)
 }

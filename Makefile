@@ -1,4 +1,10 @@
 DEST = 'woods:semp/testing/.'
+SHORT = 0
+TESTFLAGS = -v -failfast
+
+ifeq ($(SHORT),1)
+TESTFLAGS += -short
+endif
 
 semp : *.go *.tmpl
 	go build .
@@ -16,7 +22,11 @@ clean:
 	rm -f params.dat out
 
 test:
-	go test .
+	go test . ${TESTFLAGS}
+
+prof:
+	go test . -run=TestMain -cpuprofile=/tmp/semp.prof.out ${TESTFLAGS}
 
 cover:
-	go test . -v -coverprofile=/tmp/pbqff.out; go tool cover -html /tmp/pbqff.out
+	go test . -v -coverprofile=/tmp/pbqff.out
+	go tool cover -html /tmp/pbqff.out
