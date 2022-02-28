@@ -26,6 +26,7 @@ const (
 	NU            = 2.0
 	CHUNK         = 128
 	INFILE_SUFFIX = ".mop"
+	GAMMA0        = 0.7853981633974483 // pi/4
 )
 
 var (
@@ -310,7 +311,8 @@ func Fletcher(jacTjac *mat.Dense) *mat.Dense {
 	return ret
 }
 
-func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
+	newParams []Param, gamma float64) {
 	// LHS
 	var prod mat.Dense
 	prod.Mul(jac.T(), jac)
@@ -321,13 +323,29 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 	Leye.Scale(*lambda, eye)
 	var sum mat.Dense
 	sum.Add(&prod, &Leye)
+	// construct A* as a_rc = a_rc / [ sqrt(a_rr) * sqrt(a_cc) ]
+	r, c := sum.Dims()
+	lhs := mat.NewDense(r, c, nil)
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			lhs.Set(i, j,
+				sum.At(i, j)/
+					(math.Sqrt(sum.At(i, i))*
+						math.Sqrt(sum.At(j, j))))
+		}
+	}
 	// RHS
 	var diff mat.Dense
 	diff.Sub(ai, se)
 	var prod2 mat.Dense
 	prod2.Mul(jac.T(), &diff)
+	r, _ = prod2.Dims()
+	rhs := mat.NewDense(r, 1, nil)
+	for i := 0; i < r; i++ {
+		rhs.Set(i, 0, prod2.At(i, 0)/math.Sqrt(sum.At(i, i)))
+	}
 	var step mat.Dense
-	err := step.Solve(&sum, &prod2)
+	err := step.Solve(lhs, rhs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jac")
 		DumpMat(jac)
@@ -344,8 +362,27 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
 		}
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
-	return UpdateParams(params, &step, scale)
+	r, _ = step.Dims()
+	for i := 0; i < r; i++ {
+		step.Set(i, 0, step.At(i, 0)/math.Sqrt(sum.At(i, i)))
+	}
+	var gam mat.Dense
+	gam.Mul(step.T(), rhs)
+	magDelta := mat.Norm(&step, 2)
+	magG := mat.Norm(rhs, 2)
+	r, c = gam.Dims()
+	if r != 1 || c != 1 {
+		log.Fatalf("rows %d, cols %d\n", r, c)
+	}
+	gamma = math.Acos(gam.At(0, 0) / (magDelta * magG))
+	newParams = UpdateParams(params, &step, scale)
+	return
 }
+
+/*
+   g = rhs of levmar
+   gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
+*/
 
 func Filenames(jobs []Job) []string {
 	ret := make([]string, len(jobs))
@@ -421,14 +458,16 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 		if shortened < 1 {
 			// check the queue if no runJobs finish
 			Stat(&qstat)
+			time.Sleep(1 * time.Second)
+			fmt.Fprintf(os.Stderr,
+				"%d jobs remaining\n", len(runJobs))
 		}
-		time.Sleep(1 * time.Second)
-		fmt.Fprintf(os.Stderr, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
 	}
 	if *debug {
 		DumpMat(check)
 	}
+	fmt.Fprintln(os.Stderr, "jobs done")
 }
 
 func Resubmit(job Job) Job {
@@ -528,13 +567,13 @@ func main() {
 		jac := NumJac(labels, geoms, params)
 		*lambda /= NU
 		// BEGIN copy-paste
-		newParams := LevMar(jac, ai, se, params, 1.0)
+		newParams, _ := LevMar(jac, ai, se, params, 1.0)
 		jobs = SEnergy(labels, geoms, newParams, 0, None)
 		nrg.Zero()
 		RunJobs(jobs, nrg)
-		se = Relative(nrg)
-		norm, max = Norm(ai, se)
-		rmsd = RMSD(ai, se) * htToCm
+		newSe := Relative(nrg)
+		norm, max = Norm(ai, newSe)
+		rmsd = RMSD(ai, newSe) * htToCm
 		// END copy-paste
 
 		// case ii. and iii. of levmar, first case is ii. from
@@ -542,35 +581,35 @@ func main() {
 		var bad bool
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
-			newParams := LevMar(jac, ai, se, params, 1.0)
+			newParams, gamma := LevMar(jac, ai, se, params, 1.0)
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
 			RunJobs(jobs, nrg)
-			se = Relative(nrg)
-			norm, max = Norm(ai, se)
-			rmsd = RMSD(ai, se) * htToCm
+			newSe = Relative(nrg)
+			norm, max = Norm(ai, newSe)
+			rmsd = RMSD(ai, newSe) * htToCm
 			fmt.Fprintf(os.Stderr,
-				"\tλ_%d to %g with ΔNorm = %f\n",
-				i, *lambda, norm-lastNorm)
-			// give up after 5 increases
-			if i > 4 {
+				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f\n",
+				i, *lambda, norm-lastNorm, gamma)
+			if gamma < GAMMA0 {
 				// case iii. failed, try footnote
 				bad = true
-				*lambda *= math.Pow(NU, float64(-(i + 1)))
+				// trying not restoring lambda
+				// *lambda *= math.Pow(NU, float64(-(i + 1)))
 				break
 			}
 		}
-		var k float64
+		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
-			k = 1.0 / float64(int(1)<<i)
-			newParams := LevMar(jac, ai, se, params, k)
+			k = 1.0 / math.Pow(10, float64(i))
+			newParams, _ := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "inp/params.dat")
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
 			RunJobs(jobs, nrg)
-			se = Relative(nrg)
-			norm, max = Norm(ai, se)
-			rmsd = RMSD(ai, se) * htToCm
+			newSe = Relative(nrg)
+			norm, max = Norm(ai, newSe)
+			rmsd = RMSD(ai, newSe) * htToCm
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
@@ -582,6 +621,7 @@ func main() {
 		lastNorm = norm
 		lastRMSD = rmsd
 		params = newParams
+		se = newSe
 		LogParams(paramLog, params, iter)
 		iter++
 	}
