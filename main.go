@@ -26,7 +26,7 @@ const (
 	NU            = 2.0
 	CHUNK         = 128
 	INFILE_SUFFIX = ".mop"
-	GAMMA0        = 0.7853981633974483 // pi/4
+	GAMMA0        = math.Pi / 4
 )
 
 var (
@@ -595,15 +595,12 @@ func main() {
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f\n",
 				i, *lambda, norm-lastNorm, gamma)
-			if gamma < GAMMA0 {
+			if gamma < GAMMA0 || gamma > lastGamma {
 				// case iii. failed, try footnote
 				bad = true
 				// trying not restoring lambda
 				// *lambda *= math.Pow(NU, float64(-(i + 1)))
 				break
-			}
-			if i > 0 && gamma > lastGamma {
-				panic("gamma monotonicity violated")
 			}
 			lastGamma = gamma
 		}
