@@ -316,11 +316,6 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	// LHS
 	var a mat.Dense
 	a.Mul(jac.T(), jac)
-	// r, _ := prod.Dims()
-	// eye := Identity(r)
-	eye := Fletcher(&a)
-	var Leye mat.Dense
-	Leye.Scale(*lambda, eye)
 	// construct A* as a_rc = a_rc / [ sqrt(a_rr) * sqrt(a_cc) ], where a is
 	// jacTjac
 	r, c := a.Dims()
@@ -333,20 +328,26 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 						math.Sqrt(a.At(j, j))))
 		}
 	}
+	eye := Identity(r)
+	// eye := Fletcher(&a)
+	var Leye mat.Dense
+	Leye.Scale(*lambda, eye)
 	var lhs mat.Dense
 	lhs.Add(Astar, &Leye)
 	// RHS
 	var diff mat.Dense
 	diff.Sub(ai, se)
-	var prod2 mat.Dense
-	prod2.Mul(jac.T(), &diff)
-	r, _ = prod2.Dims()
+	var g mat.Dense
+	g.Mul(jac.T(), &diff)
+	r, _ = g.Dims()
+	// rhs = g*
 	rhs := mat.NewDense(r, 1, nil)
 	for i := 0; i < r; i++ {
-		rhs.Set(i, 0, prod2.At(i, 0)/math.Sqrt(a.At(i, i)))
+		rhs.Set(i, 0, g.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
-	var step mat.Dense
-	err := step.Solve(&lhs, rhs)
+	// d = δ
+	var d mat.Dense
+	err := d.Solve(&lhs, rhs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jac")
 		DumpMat(jac)
@@ -355,35 +356,28 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 		fmt.Fprintln(os.Stderr, "diff")
 		DumpVec(&diff)
 		fmt.Fprintln(os.Stderr, "prod2")
-		DumpMat(&prod2)
+		DumpMat(&g)
 		fmt.Fprintln(os.Stderr, "step")
-		DumpVec(&step)
+		DumpVec(&d)
 		if strings.Contains(err.Error(), "Inf") {
 			panic(err)
 		}
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
-	r, _ = step.Dims()
+	// step is d* here, convert back to d with eqn 30
+	r, _ = d.Dims()
 	for i := 0; i < r; i++ {
-		step.Set(i, 0, step.At(i, 0)/math.Sqrt(a.At(i, i)))
+		d.Set(i, 0, d.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
-	var gam mat.Dense
-	gam.Mul(step.T(), &prod2)
-	magDelta := mat.Norm(&step, 2)
-	magG := mat.Norm(&prod2, 2)
-	r, c = gam.Dims()
-	if r != 1 || c != 1 {
-		log.Fatalf("rows %d, cols %d\n", r, c)
-	}
-	gamma = math.Acos(gam.At(0, 0) / (magDelta * magG))
-	newParams = UpdateParams(params, &step, scale)
+	// gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
+	gam := mat.NewDense(1, 1, nil)
+	gam.Mul(d.T(), &g)
+	magD := mat.Norm(&d, 2)
+	magG := mat.Norm(&g, 2)
+	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
+	newParams = UpdateParams(params, &d, scale)
 	return
 }
-
-/*
-   g = rhs of levmar
-   gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
-*/
 
 func Filenames(jobs []Job) []string {
 	ret := make([]string, len(jobs))
@@ -574,7 +568,6 @@ func main() {
 		RunJobs(jobs, nrg)
 		newSe := Relative(nrg)
 		norm, max = Norm(ai, newSe)
-		rmsd = RMSD(ai, newSe) * htToCm
 		// END copy-paste
 
 		// case ii. and iii. of levmar, first case is ii. from
@@ -591,7 +584,6 @@ func main() {
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
 			norm, max = Norm(ai, newSe)
-			rmsd = RMSD(ai, newSe) * htToCm
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f\n",
 				i, *lambda, norm-lastNorm, gamma)
@@ -617,11 +609,11 @@ func main() {
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
 			norm, max = Norm(ai, newSe)
-			rmsd = RMSD(ai, newSe) * htToCm
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
 		}
+		rmsd = RMSD(ai, newSe) * htToCm
 		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
 			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
 			float64(time.Since(start))/1e9)
