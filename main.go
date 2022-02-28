@@ -595,12 +595,15 @@ func main() {
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f\n",
 				i, *lambda, norm-lastNorm, gamma)
-			if gamma < GAMMA0 || gamma > lastGamma {
+			if gamma < GAMMA0 {
 				// case iii. failed, try footnote
 				bad = true
 				// trying not restoring lambda
 				// *lambda *= math.Pow(NU, float64(-(i + 1)))
 				break
+			}
+			if i > 0 && gamma > lastGamma {
+				panic("gamma monotonicity violated")
 			}
 			lastGamma = gamma
 		}
