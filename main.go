@@ -376,6 +376,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	magG := mat.Norm(&g, 2)
 	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
 	newParams = UpdateParams(params, &d, scale)
+	log.Printf("λ = %g, ||step|| = %g\n", *lambda, magD)
 	return
 }
 
@@ -595,7 +596,10 @@ func main() {
 				break
 			}
 			if i > 0 && gamma > lastGamma {
-				panic("gamma monotonicity violated")
+				log.Fatalf(
+					"gamma monotonicity violated by %g\n",
+					gamma-lastGamma,
+				)
 			}
 			lastGamma = gamma
 		}
