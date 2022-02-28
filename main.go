@@ -36,10 +36,10 @@ var (
 		"DDN":      {},
 		"KON":      {},
 		"EISol":    {},
-		"DCore":  {},
-		"EHeat":  {},
-		"DipHyp": {},
-		"GCore":  {},
+		"DCore":    {},
+		"EHeat":    {},
+		"DipHyp":   {},
+		"GCore":    {},
 	}
 	CHARGE = 0
 	SPIN   = 1
@@ -60,6 +60,7 @@ var (
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
 	maxit      = flag.Int("maxit", 250, "maximum iterations")
+	one        = flag.Bool("one", false, "write the initial SE energies and exit")
 )
 
 // Errors
@@ -459,6 +460,10 @@ func main() {
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
 	RunJobs(jobs, nrg)
+	if *one {
+		DumpVec(nrg)
+		os.Exit(0)
+	}
 	se := Relative(nrg)
 	norm, max := Norm(ai, se)
 	rmsd := RMSD(ai, se) * htToCm
