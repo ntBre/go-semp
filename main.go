@@ -22,7 +22,7 @@ const (
 	htToCm        = 219_474.5459784
 	EPS           = 1e-14
 	THRESH        = 1.0
-	NU            = 3.0
+	NU            = 2.0
 	CHUNK         = 128
 	INFILE_SUFFIX = ".mop"
 )
@@ -534,7 +534,7 @@ func main() {
 				"\tλ_%d to %g with ΔNorm = %f\n",
 				i, *lambda, norm-lastNorm)
 			// give up after 5 increases
-			if i > 9 {
+			if i > 4 {
 				// case iii. failed, try footnote
 				bad = true
 				*lambda *= math.Pow(NU, float64(-(i + 1)))
