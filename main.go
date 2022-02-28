@@ -130,6 +130,12 @@ func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 		panic(err)
 	}
 	geom := ZipGeom(names, coords)
+	/*
+	   XYZ - Cartesian geometry
+	   A0 - use atomic units (bohr)
+	   precise - use higher precision
+	   relscf - tighten precision by an additional multiplicative factor
+	*/
 	t, err := template.New("com").Parse(
 		`XYZ A0 scfcrt=1.D-21 aux(precision=14) external={{.Name}} 1SCF charge={{.Charge}} PM6
 blank line

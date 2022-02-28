@@ -94,6 +94,8 @@ func TestMain(t *testing.T) {
 	if !testing.Short() {
 		t.Skip()
 	}
+	gauss := LoadEnergies("testfiles/gauss.nrg.out")
+	mopac := LoadEnergies("testfiles/mopac.nrg.out")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("testfiles/file07")
 	os.RemoveAll("inp")
@@ -101,9 +103,8 @@ func TestMain(t *testing.T) {
 	defer os.RemoveAll("inp")
 	os.MkdirAll("tmparam", 0744)
 	defer os.RemoveAll("tmparam")
-	ai := LoadEnergies("testfiles/rel.dat")
 	params, _ := LoadParams("testfiles/opt.out")
-	nrg := mat.NewDense(len(geoms), 1, nil)
+	got := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
 	tmp := PBS_TEMPLATE
 	var err error
@@ -117,20 +118,35 @@ func TestMain(t *testing.T) {
 		PBS_TEMPLATE = tmp
 		SUBMIT_CMD = cmd
 	}()
-	RunJobs(jobs, nrg)
-	se := Relative(nrg)
-	norm, max := Norm(ai, se)
-	rmsd := RMSD(ai, se) * htToCm
-	var (
-		iter     int
-		lastNorm float64
-		lastRMSD float64
-	)
-	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
-		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
-	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
-		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, 0.0)
-	DumpVec(nrg)
+	RunJobs(jobs, got)
+	if norm, fail := vecNorm(got, gauss, 7e-3); fail {
+		t.Errorf("gaussian mismatch with norm %.8e\n", norm)
+		vecDiff(got, gauss)
+	}
+	if norm, fail := vecNorm(got, mopac, 1e-10); fail {
+		t.Errorf("mopac mismatch with norm %.8e\n", norm)
+		vecDiff(got, mopac)
+	}
+}
+
+// return the norm of the difference between got and want and whether or not it
+// is greater than eps
+func vecNorm(got, want *mat.Dense, eps float64) (float64, bool) {
+	var diff mat.Dense
+	diff.Sub(got, want)
+	norm := mat.Norm(&diff, 2)
+	return norm, norm > eps
+}
+
+// print the difference between column vectors got and want
+func vecDiff(got, want *mat.Dense) {
+	l, _ := got.Dims()
+	fmt.Printf("\n%20s%20s%20s\n", "Got", "Want", "Diff")
+	for i := 0; i < l; i++ {
+		g := got.At(i, 0)
+		w := want.At(i, 0)
+		fmt.Printf("%20.12f%20.12f%20.12f\n",
+			g, w, g-w,
+		)
+	}
 }
