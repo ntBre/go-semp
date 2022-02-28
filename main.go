@@ -314,26 +314,27 @@ func Fletcher(jacTjac *mat.Dense) *mat.Dense {
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	newParams []Param, gamma float64) {
 	// LHS
-	var prod mat.Dense
-	prod.Mul(jac.T(), jac)
+	var a mat.Dense
+	a.Mul(jac.T(), jac)
 	// r, _ := prod.Dims()
 	// eye := Identity(r)
-	eye := Fletcher(&prod)
+	eye := Fletcher(&a)
 	var Leye mat.Dense
 	Leye.Scale(*lambda, eye)
-	var sum mat.Dense
-	sum.Add(&prod, &Leye)
-	// construct A* as a_rc = a_rc / [ sqrt(a_rr) * sqrt(a_cc) ]
-	r, c := sum.Dims()
-	lhs := mat.NewDense(r, c, nil)
+	// construct A* as a_rc = a_rc / [ sqrt(a_rr) * sqrt(a_cc) ], where a is
+	// jacTjac
+	r, c := a.Dims()
+	Astar := mat.NewDense(r, c, nil)
 	for i := 0; i < r; i++ {
 		for j := 0; j < c; j++ {
-			lhs.Set(i, j,
-				sum.At(i, j)/
-					(math.Sqrt(sum.At(i, i))*
-						math.Sqrt(sum.At(j, j))))
+			Astar.Set(i, j,
+				a.At(i, j)/
+					(math.Sqrt(a.At(i, i))*
+						math.Sqrt(a.At(j, j))))
 		}
 	}
+	var lhs mat.Dense
+	lhs.Add(Astar, &Leye)
 	// RHS
 	var diff mat.Dense
 	diff.Sub(ai, se)
@@ -342,15 +343,15 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	r, _ = prod2.Dims()
 	rhs := mat.NewDense(r, 1, nil)
 	for i := 0; i < r; i++ {
-		rhs.Set(i, 0, prod2.At(i, 0)/math.Sqrt(sum.At(i, i)))
+		rhs.Set(i, 0, prod2.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
 	var step mat.Dense
-	err := step.Solve(lhs, rhs)
+	err := step.Solve(&lhs, rhs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jac")
 		DumpMat(jac)
 		fmt.Fprintln(os.Stderr, "prod")
-		DumpMat(&prod)
+		DumpMat(&a)
 		fmt.Fprintln(os.Stderr, "diff")
 		DumpVec(&diff)
 		fmt.Fprintln(os.Stderr, "prod2")
@@ -364,12 +365,12 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	}
 	r, _ = step.Dims()
 	for i := 0; i < r; i++ {
-		step.Set(i, 0, step.At(i, 0)/math.Sqrt(sum.At(i, i)))
+		step.Set(i, 0, step.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
 	var gam mat.Dense
-	gam.Mul(step.T(), rhs)
+	gam.Mul(step.T(), &prod2)
 	magDelta := mat.Norm(&step, 2)
-	magG := mat.Norm(rhs, 2)
+	magG := mat.Norm(&prod2, 2)
 	r, c = gam.Dims()
 	if r != 1 || c != 1 {
 		log.Fatalf("rows %d, cols %d\n", r, c)
@@ -578,7 +579,10 @@ func main() {
 
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
-		var bad bool
+		var (
+			bad       bool
+			lastGamma float64
+		)
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
 			newParams, gamma := LevMar(jac, ai, se, params, 1.0)
@@ -598,6 +602,10 @@ func main() {
 				// *lambda *= math.Pow(NU, float64(-(i + 1)))
 				break
 			}
+			if i > 0 && gamma > lastGamma {
+				panic("gamma monotonicity violated")
+			}
+			lastGamma = gamma
 		}
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
