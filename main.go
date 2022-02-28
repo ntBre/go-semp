@@ -541,10 +541,9 @@ func main() {
 				break
 			}
 		}
-		var prev float64
-		// just break if decreasing k doesnt change the norm
-		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
-			k := 1.0 / float64(int(1)<<i)
+		var k float64
+		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
+			k = 1.0 / float64(int(1)<<i)
 			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "inp/params.dat")
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
@@ -556,7 +555,6 @@ func main() {
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
-			prev = norm
 		}
 		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
 			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
