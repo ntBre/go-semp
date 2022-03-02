@@ -595,11 +595,9 @@ func main() {
 				// *lambda *= math.Pow(NU, float64(-(i + 1)))
 				break
 			}
-			if i > 0 && gamma > lastGamma {
-				log.Printf(
-					"gamma monotonicity violated by %g\n",
-					gamma-lastGamma,
-				)
+			// gamma monotonicity violated, take the bad step and
+			// move on. probably trapped at a local minimum
+			if i > 0 && gamma - lastGamma > 1e-6 {
 				break
 			}
 			lastGamma = gamma
