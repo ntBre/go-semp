@@ -85,6 +85,7 @@ func LoadParams(filename string) (ret []Param, num int) {
 		line = scanner.Text()
 		fields = strings.Fields(line)
 		if gap.MatchString(line) {
+			// see commit 5667951 for restoring this
 			continue
 		}
 		switch {

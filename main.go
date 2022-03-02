@@ -600,6 +600,7 @@ func main() {
 					"gamma monotonicity violated by %g\n",
 					gamma-lastGamma,
 				)
+				break
 			}
 			lastGamma = gamma
 		}
