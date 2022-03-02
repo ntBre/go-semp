@@ -586,8 +586,10 @@ func main() {
 			newSe = Relative(nrg)
 			norm, max = Norm(ai, newSe)
 			fmt.Fprintf(os.Stderr,
-				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f\n",
-				i, *lambda, norm-lastNorm, gamma)
+				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f (%+g)\n",
+				i, *lambda, norm-lastNorm, gamma,
+				gamma-lastGamma,
+			)
 			if gamma < GAMMA0 {
 				// case iii. failed, try footnote
 				bad = true
@@ -597,7 +599,7 @@ func main() {
 			}
 			// gamma monotonicity violated, take the bad step and
 			// move on. probably trapped at a local minimum
-			if i > 0 && gamma - lastGamma > 1e-6 {
+			if i > 0 && gamma-lastGamma > 1e-6 {
 				break
 			}
 			lastGamma = gamma
