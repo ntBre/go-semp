@@ -72,15 +72,6 @@ func LogParams(w io.Writer, params []Param, iter int) {
 	WriteParams(w, params)
 }
 
-func DumpParams(params []Param, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	WriteParams(f, params)
-}
-
 func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 	f, err := os.CreateTemp("tmparam", "")
 	if err != nil {

@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -43,6 +46,45 @@ func TestSubmit(t *testing.T) {
 	got := Submit("testfiles/file")
 	want := "12345678"
 	if got != want {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}
+
+func TestResubmit(t *testing.T) {
+	tmp := SUBMIT_CMD
+	SUBMIT_CMD, _ = filepath.Abs("testfiles/scripts/sbatch")
+	setup()
+	defer func() {
+		SUBMIT_CMD = tmp
+		test_takedown()
+	}()
+	src, err := os.Open("testfiles/job.mop")
+	defer src.Close()
+	if err != nil {
+		panic(err)
+	}
+	inp := filepath.Join("inp/job.mop")
+	dst, err := os.Create(inp)
+	if err != nil {
+		panic(err)
+	}
+	defer dst.Close()
+	io.Copy(dst, src)
+	got := Resubmit(Job{
+		Filename: "job",
+		Jobid:    "00000",
+		I:        1,
+		J:        2,
+		Coeff:    12,
+	})
+	want := Job{
+		Filename: "job_redo",
+		I:        1,
+		J:        2,
+		Coeff:    12,
+		Jobid:    "12345678",
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
