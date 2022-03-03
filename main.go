@@ -290,17 +290,6 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	return ret
 }
 
-// Fletcher returns the diagonal of jacTjac, used in the Fletcher
-// modification to LevMar
-func Fletcher(jacTjac *mat.Dense) *mat.Dense {
-	n, _ := jacTjac.Dims()
-	ret := mat.NewDense(n, n, nil)
-	for i := 0; i < n; i++ {
-		ret.Set(i, i, jacTjac.At(i, i))
-	}
-	return ret
-}
-
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	newParams []Param, gamma float64) {
 	// LHS
@@ -319,7 +308,6 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 		}
 	}
 	eye := Identity(r)
-	// eye := Fletcher(&a)
 	var Leye mat.Dense
 	Leye.Scale(*lambda, eye)
 	var lhs mat.Dense
