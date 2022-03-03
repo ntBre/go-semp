@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -12,11 +11,6 @@ import (
 const (
 	KCALHT = 627.5091809 // kcal/mol per hartree
 )
-
-func TrimExt(filename string) string {
-	lext := len(filepath.Ext(filename))
-	return filename[:len(filename)-lext]
-}
 
 func ReadOut(filename string) (energy float64, err error) {
 	f, err := os.Open(filename)

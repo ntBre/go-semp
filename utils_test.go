@@ -81,3 +81,11 @@ func TestIdentity(t *testing.T) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
+
+func TestTrimExt(t *testing.T) {
+	got := TrimExt("test.in")
+	want := "test"
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}

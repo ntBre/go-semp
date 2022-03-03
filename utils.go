@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -123,4 +124,9 @@ func DupOutErr(infile string) {
 	errfile, _ := os.Create(base + ".log")
 	syscall.Dup2(int(outfile.Fd()), 1)
 	syscall.Dup2(int(errfile.Fd()), 2)
+}
+
+func TrimExt(filename string) string {
+	lext := len(filepath.Ext(filename))
+	return filename[:len(filename)-lext]
 }
