@@ -454,14 +454,12 @@ func work(infile string) (norms []float64) {
 	norm, max := Norm(ai, se)
 	rmsd := RMSD(ai, se) * htToCm
 	var (
-		iter     int
 		lastNorm float64
 		lastRMSD float64
 	)
 	printHeader()
-	printStep(iter, norm, lastNorm, rmsd, lastRMSD, max, 0.0)
-	LogParams(paramLog, params, iter)
-	iter++
+	printStep(0, norm, lastNorm, rmsd, lastRMSD, max, 0.0)
+	LogParams(paramLog, params, 0)
 	lastNorm = norm
 	lastRMSD = rmsd
 	start := time.Now()
@@ -470,8 +468,10 @@ func work(infile string) (norms []float64) {
 		newParams []Param
 		newSe     *mat.Dense
 		gamma     float64
+		delNorm   float64 = 1
 	)
-	for iter <= conf.MaxIt && norm > THRESH {
+	for iter := 1; iter <= conf.MaxIt && norm > THRESH &&
+		math.Abs(delNorm) > 1e-4; iter++ {
 		jac := NumJac(conf.Atoms, geoms, params)
 		lambda /= NU
 		newParams, newSe, norm, max, gamma = inner(
@@ -526,12 +526,12 @@ func work(infile string) (norms []float64) {
 			float64(time.Since(start))/1e9)
 		norms = append(norms, norm)
 		start = time.Now()
+		delNorm = norm - lastNorm
 		lastNorm = norm
 		lastRMSD = rmsd
 		params = newParams
 		se = newSe
 		LogParams(paramLog, params, iter)
-		iter++
 	}
 	return
 }
@@ -559,5 +559,6 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	work("semp.in")
+	iters := work("semp.in")
+	fmt.Printf("Convergence reached after %d iterations\n", len(iters))
 }
