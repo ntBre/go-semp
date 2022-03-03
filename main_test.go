@@ -90,6 +90,11 @@ H      0.000000000000     -3.014627239000      1.713896351000
 	}
 }
 
+func test_takedown() {
+	takedown()
+	os.RemoveAll("inp")
+}
+
 func TestMain(t *testing.T) {
 	if !testing.Short() {
 		t.Skip()
@@ -98,11 +103,8 @@ func TestMain(t *testing.T) {
 	mopac := LoadEnergies("testfiles/mopac.nrg.out")
 	labels := []string{"C", "C", "C", "H", "H"}
 	geoms := LoadGeoms("testfiles/file07")
-	os.RemoveAll("inp")
-	os.Mkdir("inp", 0755)
-	defer os.RemoveAll("inp")
-	os.MkdirAll("tmparam", 0744)
-	defer os.RemoveAll("tmparam")
+	setup()
+	defer test_takedown()
 	params := LoadParams("testfiles/opt.out")
 	got := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
@@ -148,5 +150,53 @@ func vecDiff(got, want *mat.Dense) {
 		fmt.Printf("%20.12f%20.12f%20.12f\n",
 			g, w, g-w,
 		)
+	}
+}
+
+func compMat(a, b *mat.Dense, eps float64) bool {
+	var diff mat.Dense
+	diff.Sub(a, b)
+	return mat.Norm(&diff, 2) < eps
+}
+
+func TestNumJac(t *testing.T) {
+	tmp := PBS_TEMPLATE
+	var err error
+	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cmd := SUBMIT_CMD
+	SUBMIT_CMD = "bash"
+	defer func() {
+		PBS_TEMPLATE = tmp
+		SUBMIT_CMD = cmd
+		test_takedown()
+	}()
+	setup()
+	got := NumJac(
+		[]string{"C", "C", "C", "H", "H"},
+		LoadGeoms("testfiles/three07"),
+		LoadParams(LoadConfig("testfiles/test.in").Params),
+	)
+	want := mat.NewDense(3, 15, []float64{
+		-0.01497188, 0.20599558, 0.04540870,
+		0.00756935, -0.07643601, 0.09140744,
+		0.60444017, 1.26628479, 0.06613604,
+		0.14448405, -0.06807515, 0.00109442,
+		-0.05038643, 0.25973557, -0.04459850,
+		-0.01499188, 0.20528582, 0.04541566,
+		0.00754239, -0.07667791, 0.09167065,
+		0.60234381, 1.26036888, 0.06667187,
+		0.14533904, -0.06778789, -0.00037060,
+		-0.05114822, 0.26220733, -0.04444806,
+		-0.01500130, 0.20545525, 0.04541131,
+		0.00754616, -0.07681023, 0.09181168,
+		0.60351258, 1.26152403, 0.06675347,
+		0.14539861, -0.06789877, -0.00041641,
+		-0.05106358, 0.26227226, -0.04426819,
+	})
+	if !compMat(got, want, 1e-7) {
+		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

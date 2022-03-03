@@ -487,6 +487,17 @@ func Resubmit(job Job) Job {
 	}
 }
 
+func setup() {
+	os.RemoveAll("tmparam")
+	os.MkdirAll("tmparam", 0744)
+	os.RemoveAll("inp")
+	os.Mkdir("inp", 0744)
+}
+
+func takedown() {
+	os.RemoveAll("tmparam")
+}
+
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
@@ -504,9 +515,8 @@ func main() {
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
-	// make a tmp directory for the params
-	os.MkdirAll("tmparam", 0744)
-	defer os.RemoveAll("tmparam")
+	setup()
+	defer takedown()
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -517,8 +527,6 @@ func main() {
 	}
 	labels := strings.Fields(*atoms)
 	geoms := LoadGeoms(*geomFile)
-	os.RemoveAll("inp")
-	os.Mkdir("inp", 0755)
 	paramLog, _ := os.Create("params.log")
 	ai := LoadEnergies(*energyFile)
 	params := LoadParams(LoadConfig("semp.in").Params)
