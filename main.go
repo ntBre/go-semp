@@ -584,6 +584,7 @@ func main() {
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
+			dNorm := norm - lastNorm
 			norm, max = Norm(ai, newSe)
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f (%+g)\n",
@@ -599,7 +600,8 @@ func main() {
 			}
 			// gamma monotonicity violated, take the bad step and
 			// move on. probably trapped at a local minimum
-			if i > 0 && gamma-lastGamma > 1e-6 {
+			if (i > 0 && gamma-lastGamma > 1e-6) ||
+				norm-lastNorm > dNorm { // dNorm increased
 				break
 			}
 			lastGamma = gamma
