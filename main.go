@@ -277,7 +277,7 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 }
 
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
-	newParams []Param, gamma float64) {
+	newParams []Param) {
 	// LHS
 	var a mat.Dense
 	a.Mul(jac.T(), jac)
@@ -333,14 +333,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	for i := 0; i < r; i++ {
 		d.Set(i, 0, d.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
-	// gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
-	gam := mat.NewDense(1, 1, nil)
-	gam.Mul(d.T(), &g)
-	magD := mat.Norm(&d, 2)
-	magG := mat.Norm(&g, 2)
-	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
 	newParams = UpdateParams(params, &d, scale)
-	log.Printf("λ = %g, ||step|| = %g\n", *lambda, magD)
 	return
 }
 
@@ -535,7 +528,7 @@ func main() {
 		jac := NumJac(labels, geoms, params)
 		*lambda /= NU
 		// BEGIN copy-paste
-		newParams, _ := LevMar(jac, ai, se, params, 1.0)
+		newParams := LevMar(jac, ai, se, params, 1.0)
 		jobs = SEnergy(labels, geoms, newParams, 0, None)
 		nrg.Zero()
 		RunJobs(jobs, nrg)
@@ -546,43 +539,28 @@ func main() {
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
 		var (
-			bad       bool
-			lastGamma float64
+			bad bool
 		)
 		for i := 0; norm > lastNorm; i++ {
 			*lambda *= NU
-			newParams, gamma := LevMar(jac, ai, se, params, 1.0)
+			newParams := LevMar(jac, ai, se, params, 1.0)
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
-			dNorm := norm - lastNorm
 			norm, max = Norm(ai, newSe)
 			fmt.Fprintf(os.Stderr,
-				"\tλ_%d to %g with ΔNorm = %f, ᵞ = %f (%+g)\n",
-				i, *lambda, norm-lastNorm, gamma,
-				gamma-lastGamma,
+				"\tλ_%d to %g with ΔNorm = %f\n",
+				i, *lambda, norm-lastNorm,
 			)
-			if gamma < GAMMA0 {
-				// case iii. failed, try footnote
-				bad = true
-				// trying not restoring lambda
-				// *lambda *= math.Pow(NU, float64(-(i + 1)))
+			if i > MAX_TRIES {
 				break
 			}
-			// gamma monotonicity violated, take the bad step and
-			// move on. probably trapped at a local minimum
-			if (i > 0 && gamma-lastGamma > 1e-6) ||
-				norm-lastNorm > dNorm || // dNorm increased
-				i > MAX_TRIES { // too many tries
-				break
-			}
-			lastGamma = gamma
 		}
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
 			k = 1.0 / math.Pow(10, float64(i))
-			newParams, _ := LevMar(jac, ai, se, params, k)
+			newParams := LevMar(jac, ai, se, params, k)
 			DumpParams(newParams, "inp/params.dat")
 			jobs = SEnergy(labels, geoms, newParams, 0, None)
 			nrg.Zero()
