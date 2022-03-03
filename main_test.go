@@ -38,6 +38,42 @@ HSP            C      0.717322000000
 	}
 }
 
+func TestMain(t *testing.T) {
+	if !testing.Short() {
+		t.Skip()
+	}
+	gauss := LoadEnergies("testfiles/gauss.nrg.out")
+	mopac := LoadEnergies("testfiles/mopac.nrg.out")
+	labels := []string{"C", "C", "C", "H", "H"}
+	geoms := LoadGeoms("testfiles/file07")
+	setup()
+	defer test_takedown()
+	params := LoadConfig("testfiles/test.in").Params
+	got := mat.NewDense(len(geoms), 1, nil)
+	jobs := SEnergy(labels, geoms, params, 0, None)
+	tmp := PBS_TEMPLATE
+	var err error
+	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cmd := SUBMIT_CMD
+	SUBMIT_CMD = "bash"
+	defer func() {
+		PBS_TEMPLATE = tmp
+		SUBMIT_CMD = cmd
+	}()
+	RunJobs(jobs, got)
+	if norm, fail := vecNorm(got, gauss, 7e-3); fail {
+		t.Errorf("gaussian mismatch with norm %.8e\n", norm)
+		vecDiff(got, gauss)
+	}
+	if norm, fail := vecNorm(got, mopac, 1e-10); fail {
+		t.Errorf("mopac mismatch with norm %.8e\n", norm)
+		vecDiff(got, mopac)
+	}
+}
+
 func TestWriteCom(t *testing.T) {
 	var b bytes.Buffer
 	p := LoadParams("testfiles/opt.out")
