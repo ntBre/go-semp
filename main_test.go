@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"regexp"
 	"testing"
@@ -10,23 +9,6 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 )
-
-func charComp(got, want string) {
-	for c := range got {
-		if len(got) <= c {
-			fmt.Println("got too short")
-			return
-		} else if len(want) <= c {
-			fmt.Println("want too short")
-			return
-		}
-		if got[c] != want[c] {
-			fmt.Printf("got\n%q, wanted\n%q\n",
-				got[:c+1], want[:c+1])
-			return
-		}
-	}
-}
 
 func TestWriteParams(t *testing.T) {
 	var b bytes.Buffer
@@ -88,75 +70,6 @@ H      0.000000000000     -3.014627239000      1.713896351000
 		charComp(got, want)
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
-}
-
-func test_takedown() {
-	takedown()
-	os.RemoveAll("inp")
-}
-
-func TestMain(t *testing.T) {
-	if !testing.Short() {
-		t.Skip()
-	}
-	gauss := LoadEnergies("testfiles/gauss.nrg.out")
-	mopac := LoadEnergies("testfiles/mopac.nrg.out")
-	labels := []string{"C", "C", "C", "H", "H"}
-	geoms := LoadGeoms("testfiles/file07")
-	setup()
-	defer test_takedown()
-	params := LoadParams("testfiles/opt.out")
-	got := mat.NewDense(len(geoms), 1, nil)
-	jobs := SEnergy(labels, geoms, params, 0, None)
-	tmp := PBS_TEMPLATE
-	var err error
-	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
-	if err != nil {
-		panic(err)
-	}
-	cmd := SUBMIT_CMD
-	SUBMIT_CMD = "bash"
-	defer func() {
-		PBS_TEMPLATE = tmp
-		SUBMIT_CMD = cmd
-	}()
-	RunJobs(jobs, got)
-	if norm, fail := vecNorm(got, gauss, 7e-3); fail {
-		t.Errorf("gaussian mismatch with norm %.8e\n", norm)
-		vecDiff(got, gauss)
-	}
-	if norm, fail := vecNorm(got, mopac, 1e-10); fail {
-		t.Errorf("mopac mismatch with norm %.8e\n", norm)
-		vecDiff(got, mopac)
-	}
-}
-
-// return the norm of the difference between got and want and whether or not it
-// is greater than eps
-func vecNorm(got, want *mat.Dense, eps float64) (float64, bool) {
-	var diff mat.Dense
-	diff.Sub(got, want)
-	norm := mat.Norm(&diff, 2)
-	return norm, norm > eps
-}
-
-// print the difference between column vectors got and want
-func vecDiff(got, want *mat.Dense) {
-	l, _ := got.Dims()
-	fmt.Printf("\n%20s%20s%20s\n", "Got", "Want", "Diff")
-	for i := 0; i < l; i++ {
-		g := got.At(i, 0)
-		w := want.At(i, 0)
-		fmt.Printf("%20.12f%20.12f%20.12f\n",
-			g, w, g-w,
-		)
-	}
-}
-
-func compMat(a, b *mat.Dense, eps float64) bool {
-	var diff mat.Dense
-	diff.Sub(a, b)
-	return mat.Norm(&diff, 2) < eps
 }
 
 func TestNumJac(t *testing.T) {
