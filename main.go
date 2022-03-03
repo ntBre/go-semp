@@ -436,30 +436,27 @@ func takedown() {
 	os.RemoveAll("tmparam")
 }
 
-func main() {
-	host, _ := os.Hostname()
-	flag.Parse()
-	args := flag.Args()
-	infile := "semp"
-	if len(args) >= 1 {
-		infile = args[0]
-	}
-	DupOutErr(infile)
-	fmt.Printf("running on host: %s\n", host)
-	if *debug {
-		os.Mkdir("debug", 0744)
-	}
-	setup()
-	defer takedown()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-	work("semp.in")
+func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
+	params []Param, step, lambda float64) (newParams []Param,
+	newSe *mat.Dense, norm, max float64) {
+	newParams = LevMar(jac, ai, se, params, step, lambda)
+	jobs := SEnergy(atoms, geoms, newParams, 0, None)
+	nrg := mat.NewDense(len(geoms), 1, nil)
+	RunJobs(jobs, nrg)
+	newSe = Relative(nrg)
+	norm, max = Norm(ai, newSe)
+	return
+}
+
+func printHeader() {
+	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
+}
+func printStep(iter int, norm, lastNorm, rmsd, lastRMSD, max, time float64) {
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, time)
 }
 
 func work(infile string) (norms []float64) {
@@ -485,29 +482,24 @@ func work(infile string) (norms []float64) {
 		lastNorm float64
 		lastRMSD float64
 	)
-	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
-		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
-	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
-		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, 0.0)
+	printHeader()
+	printStep(iter, norm, lastNorm, rmsd, lastRMSD, max, 0.0)
 	LogParams(paramLog, params, iter)
 	iter++
 	lastNorm = norm
 	lastRMSD = rmsd
 	start := time.Now()
 	norms = []float64{norm}
+	var (
+		newParams []Param
+		newSe     *mat.Dense
+	)
 	for iter <= conf.MaxIt && norm > THRESH {
 		jac := NumJac(conf.Atoms, geoms, params)
 		lambda /= NU
-		// BEGIN copy-paste
-		newParams := LevMar(jac, ai, se, params, 1.0, lambda)
-		jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
-		nrg.Zero()
-		RunJobs(jobs, nrg)
-		newSe := Relative(nrg)
-		norm, max = Norm(ai, newSe)
-		// END copy-paste
+		newParams, newSe, norm, max = inner(
+			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
+		)
 
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
@@ -516,37 +508,32 @@ func work(infile string) (norms []float64) {
 		)
 		for i := 0; norm > lastNorm; i++ {
 			lambda *= NU
-			newParams := LevMar(jac, ai, se, params, 1.0, lambda)
-			jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
-			nrg.Zero()
-			RunJobs(jobs, nrg)
-			newSe = Relative(nrg)
-			norm, max = Norm(ai, newSe)
+			newParams, newSe, norm, max = inner(
+				conf.Atoms, geoms, jac, ai,
+				se, params, 1.0, lambda,
+			)
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f\n",
 				i, lambda, norm-lastNorm,
 			)
 			if i > MAX_TRIES {
+				bad = true
 				break
 			}
 		}
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
 			k = 1.0 / math.Pow(10, float64(i))
-			newParams := LevMar(jac, ai, se, params, k, lambda)
-			DumpParams(newParams, "inp/params.dat")
-			jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
-			nrg.Zero()
-			RunJobs(jobs, nrg)
-			newSe = Relative(nrg)
-			norm, max = Norm(ai, newSe)
+			newParams, newSe, norm, max = inner(
+				conf.Atoms, geoms, jac, ai,
+				se, params, k, lambda,
+			)
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
 		}
 		rmsd = RMSD(ai, newSe) * htToCm
-		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
+		printStep(iter, norm, lastNorm, rmsd, lastRMSD, max,
 			float64(time.Since(start))/1e9)
 		norms = append(norms, norm)
 		start = time.Now()
@@ -558,4 +545,30 @@ func work(infile string) (norms []float64) {
 		iter++
 	}
 	return
+}
+
+func main() {
+	host, _ := os.Hostname()
+	flag.Parse()
+	args := flag.Args()
+	infile := "semp"
+	if len(args) >= 1 {
+		infile = args[0]
+	}
+	DupOutErr(infile)
+	fmt.Printf("running on host: %s\n", host)
+	if *debug {
+		os.Mkdir("debug", 0744)
+	}
+	setup()
+	defer takedown()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	work("semp.in")
 }
