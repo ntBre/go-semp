@@ -27,6 +27,7 @@ const (
 	CHUNK         = 128
 	INFILE_SUFFIX = ".mop"
 	GAMMA0        = math.Pi / 4
+	MAX_TRIES     = 5
 )
 
 var (
@@ -573,7 +574,7 @@ func main() {
 			// move on. probably trapped at a local minimum
 			if (i > 0 && gamma-lastGamma > 1e-6) ||
 				norm-lastNorm > dNorm || // dNorm increased
-				i > 9 { // too many tries
+				i > MAX_TRIES { // too many tries
 				break
 			}
 			lastGamma = gamma
