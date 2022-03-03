@@ -18,13 +18,6 @@ const (
 	toAng = 0.5291_772_109_03
 )
 
-func Len(params []Param) (sum int) {
-	for _, p := range params {
-		sum += len(p.Names)
-	}
-	return sum
-}
-
 func Sub(a, b []float64) []float64 {
 	ret := make([]float64, len(a))
 	for i := range a {

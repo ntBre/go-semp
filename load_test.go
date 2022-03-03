@@ -1,11 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
 )
+
+func TestLoadConfig(t *testing.T) {
+	LoadConfig("testfiles/test.in")
+	// if !reflect.DeepEqual(got, want) {
+	// 	t.Errorf("got %v, wanted %v\n", got, want)
+	// }
+}
 
 func TestLoadGeoms(t *testing.T) {
 	got := LoadGeoms("testfiles/three07")
@@ -52,65 +60,45 @@ func TestLoadEnergies(t *testing.T) {
 	}
 }
 
-func TestLoadParams(t *testing.T) {
-	tests := []struct {
-		infile string
-		want   []Param
-	}{
-		{
-			infile: "testfiles/opt.out",
-			want: []Param{
-				{
-					"H",
-					[]string{
-						"USS",
-						"ZS",
-						"BETAS",
-						"GSS",
-					},
-					[]float64{
-						-11.24695800,
-						1.26864100,
-						-8.35298400,
-						14.44868600,
-					},
-				},
-				{
-					"C",
-					[]string{
-						"USS",
-						"UPP",
-						"ZS",
-						"ZP",
-						"BETAS",
-						"BETAP",
-						"GSS",
-						"GPP",
-						"GSP",
-						"GP2",
-						"HSP",
-					},
-					[]float64{
-						-51.08965300,
-						-39.93792000,
-						2.04755800,
-						1.70284100,
-						-15.38523600,
-						-7.47192900,
-						13.33551900,
-						10.77832600,
-						11.52813400,
-						9.48621200,
-						0.71732200,
-					},
-				},
-			},
-		},
-	}
-	for _, test := range tests {
-		got, _ := LoadParams(test.infile)
-		if !reflect.DeepEqual(got, test.want) {
-			t.Errorf("got %v, wanted %v\n", got, test.want)
+func compParams(a, b []Param) bool {
+	for i := range a {
+		if a[i].Atom != b[i].Atom {
+			fmt.Println(a[i], b[i])
+			return false
 		}
+		if a[i].Name != b[i].Name {
+			fmt.Println(a[i], b[i])
+			return false
+		}
+		if a[i].Value != b[i].Value {
+			fmt.Println(a[i], b[i])
+			return false
+		}
+	}
+	return true
+}
+
+func TestLoadParams(t *testing.T) {
+	rc := LoadConfig("testfiles/test.in")
+	got := LoadParams(rc.Params)
+	want := []Param{
+		{"USS", "H", -11.246958000000},
+		{"ZS", "H", 1.268641000000},
+		{"BETAS", "H", -8.352984000000},
+		{"GSS", "H", 14.448686000000},
+		{"USS", "C", -51.089653000000},
+		{"UPP", "C", -39.937920000000},
+		{"ZS", "C", 2.047558000000},
+		{"ZP", "C", 1.702841000000},
+		{"BETAS", "C", -15.385236000000},
+		{"BETAP", "C", -7.471929000000},
+		{"GSS", "C", 13.335519000000},
+		{"GPP", "C", 10.778326000000},
+		{"GSP", "C", 11.528134000000},
+		{"GP2", "C", 9.486212000000},
+		{"HSP", "C", 0.717322000000},
+	}
+	if !compParams(got, want) {
+		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

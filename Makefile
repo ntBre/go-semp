@@ -15,8 +15,9 @@ files :
 deploy: semp
 	scp -C semp $(DEST)
 
-eland: semp
-	scp -C semp 'eland:programs/semp/.'
+eland: semp scripts/convert.py
+	scp -C $? 'eland:programs/semp/.'
+	date >> eland
 
 clean:
 	rm -f params.dat out

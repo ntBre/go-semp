@@ -38,15 +38,6 @@ func TestSub(t *testing.T) {
 	}
 }
 
-func TestLen(t *testing.T) {
-	p, _ := LoadParams("testfiles/opt.out")
-	got := Len(p)
-	want := 15
-	if got != want {
-		t.Errorf("got %v, wanted %v\n", got, want)
-	}
-}
-
 func TestScale(t *testing.T) {
 	got := Scale(2.0, []float64{1, 2, 3})
 	want := []float64{2, 4, 6}

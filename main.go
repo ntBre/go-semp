@@ -82,16 +82,16 @@ var (
 )
 
 type Param struct {
-	Atom   string
-	Names  []string
-	Values []float64
+	Name  string
+	Atom  string
+	Value float64
 }
 
 type Params []Param
 
 func (p Params) Values() (ret []float64) {
 	for i := range p {
-		ret = append(ret, p[i].Values...)
+		ret = append(ret, p[i].Value)
 	}
 	return
 }
@@ -100,12 +100,10 @@ func (p Params) Values() (ret []float64) {
 // writes them to w
 func WriteParams(w io.Writer, params []Param) error {
 	nw := bufio.NewWriter(w)
-	for _, param := range params {
-		for i, name := range param.Names {
-			fmt.Fprintf(nw, "%-8s%8s%20.12f\n",
-				name, param.Atom, param.Values[i],
-			)
-		}
+	for _, p := range params {
+		fmt.Fprintf(nw, "%-8s%8s%20.12f\n",
+			p.Name, p.Atom, p.Value,
+		)
 	}
 	fmt.Fprint(nw, "\n")
 	return nw.Flush()
@@ -223,15 +221,15 @@ type Job struct {
 // CentralDiff returns a list of Jobs needed to compute the ith column
 // of the numerical Jacobian
 func CentralDiff(names []string, geoms [][]float64, params []Param,
-	p, i, col int) []Job {
-	params[p].Values[i] += DELTA
+	i, col int) []Job {
+	params[i].Value += DELTA
 	fwdJobs := SEnergy(names, geoms, params, col, Fwd)
 
-	params[p].Values[i] -= 2 * DELTA
+	params[i].Value -= 2 * DELTA
 	bwdJobs := SEnergy(names, geoms, params, col, Bwd)
 
 	// have to restore the value
-	params[p].Values[i] += DELTA
+	params[i].Value += DELTA
 
 	return append(fwdJobs, bwdJobs...)
 }
@@ -239,25 +237,23 @@ func CentralDiff(names []string, geoms [][]float64, params []Param,
 // NumJac computes the numerical Jacobian of energies vs params
 func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	rows := len(geoms)
-	cols := Len(params)
+	cols := len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	// Set up all the Jobs for the Jacobian
 	jobs := make([]Job, 0)
-	for p := range params {
-		for i := range params[p].Values {
-			if *debug {
-				fmt.Printf("before:%12.9f\n",
-					Params(params).Values())
-			}
-			jobs = append(jobs,
-				CentralDiff(names, geoms, params, p, i, col)...)
-			if *debug {
-				fmt.Printf(" after:%12.9f\n",
-					Params(params).Values())
-			}
-			col++
+	for i := range params {
+		if *debug {
+			fmt.Printf("before:%12.9f\n",
+				Params(params).Values())
 		}
+		jobs = append(jobs,
+			CentralDiff(names, geoms, params, i, col)...)
+		if *debug {
+			fmt.Printf(" after:%12.9f\n",
+				Params(params).Values())
+		}
+		col++
 	}
 	RunJobs(jobs, jac)
 	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
@@ -284,17 +280,11 @@ func cleanup() {
 
 func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	ret := make([]Param, 0, len(params))
-	var i int
-	for _, p := range params {
-		vals := make([]float64, 0, len(p.Values))
-		for _, val := range p.Values {
-			vals = append(vals, val+v.At(i, 0)*scale)
-			i++
-		}
+	for i, p := range params {
 		ret = append(ret, Param{
-			Atom:   p.Atom,
-			Names:  p.Names,
-			Values: vals,
+			Atom:  p.Atom,
+			Name:  p.Name,
+			Value: p.Value + v.At(i, 0)*scale,
 		})
 	}
 	return ret
@@ -531,8 +521,8 @@ func main() {
 	os.Mkdir("inp", 0755)
 	paramLog, _ := os.Create("params.log")
 	ai := LoadEnergies(*energyFile)
-	params, num := LoadParams(*paramFile)
-	fmt.Printf("loaded %d params\n", num)
+	params := LoadParams(LoadConfig("semp.in").Params)
+	fmt.Printf("loaded %d params\n", len(params))
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
 	RunJobs(jobs, nrg)

@@ -30,7 +30,7 @@ func charComp(got, want string) {
 
 func TestWriteParams(t *testing.T) {
 	var b bytes.Buffer
-	p, _ := LoadParams("testfiles/opt.out")
+	p := LoadParams(LoadConfig("testfiles/test.in").Params)
 	WriteParams(&b, p)
 	got := b.String()
 	want := `USS            H    -11.246958000000
@@ -58,7 +58,7 @@ HSP            C      0.717322000000
 
 func TestWriteCom(t *testing.T) {
 	var b bytes.Buffer
-	p, _ := LoadParams("testfiles/opt.out")
+	p := LoadParams("testfiles/opt.out")
 	os.MkdirAll("tmparam", 0744)
 	defer os.RemoveAll("tmparam")
 	WriteCom(&b, []string{"C", "C", "C", "H", "H"},
@@ -103,7 +103,7 @@ func TestMain(t *testing.T) {
 	defer os.RemoveAll("inp")
 	os.MkdirAll("tmparam", 0744)
 	defer os.RemoveAll("tmparam")
-	params, _ := LoadParams("testfiles/opt.out")
+	params := LoadParams("testfiles/opt.out")
 	got := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
 	tmp := PBS_TEMPLATE

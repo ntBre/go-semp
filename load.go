@@ -2,14 +2,37 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"log"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"gonum.org/v1/gonum/mat"
 )
+
+type RawConf struct {
+	Params string
+}
+
+func LoadConfig(filename string) RawConf {
+	f, err := os.Open(filename)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	cont, err := io.ReadAll(f)
+	if err != nil {
+		panic(err)
+	}
+	rc := new(RawConf)
+	err = toml.Unmarshal(cont, rc)
+	if err != nil {
+		panic(err)
+	}
+	return *rc
+}
 
 func LoadGeoms(filename string) (ret [][]float64) {
 	f, err := os.Open(filename)
@@ -60,67 +83,37 @@ func LoadEnergies(filename string) *mat.Dense {
 	return mat.NewDense(len(ret), 1, ret)
 }
 
-// LoadParams extracts semi-empirical parameters from a MOPAC output
-// file
-func LoadParams(filename string) (ret []Param, num int) {
-	f, err := os.Open(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	scanner := bufio.NewScanner(f)
-	var (
-		line    string
-		fields  []string
-		first   bool
-		inparam bool
-		param   Param
-		skip    int
+// LoadParams extracts semi-empirical parameters from an input parameter string.
+// The expected format is that of a MOPAC input file, not output file
+func LoadParams(params string) (ret []Param) {
+	scanner := bufio.NewScanner(
+		strings.NewReader(params),
 	)
-	blank := regexp.MustCompile(`^ *$`)
-	gap := regexp.MustCompile(`(ALPB|XFAC)_ ?(\d+)`)
+	var (
+		line   string
+		fields []string
+	)
 	// TODO might need to deduplicate symmetrical terms like 1
 	// XFAC_6 vs 6 XFAC_1
 	for scanner.Scan() {
 		line = scanner.Text()
 		fields = strings.Fields(line)
-		if gap.MatchString(line) {
-			// see commit 5667951 for restoring this
-			continue
-		}
 		switch {
-		case skip > 0:
-			skip--
-		case strings.Contains(line, "MATRIX FROM HCORE"):
-			return
-		case strings.Contains(line, "PARAMETER VALUES USED"):
-			skip = 4
-			inparam = true
-			first = true
-			param = Param{}
-		case inparam && blank.MatchString(line):
-			if param.Atom != "" {
-				ret = append(ret, param)
-			}
-			first = true
-			param = Param{}
-		case inparam && first:
-			param.Atom = ATOMIC_NUMBERS[fields[0]]
-			first = false
-			fallthrough
-		case inparam:
-			if _, ok := DERIVED_PARAMS[fields[1]]; ok {
-				continue
-			}
-			param.Names = append(param.Names, fields[1])
+		case len(fields) != 3:
+			continue
+		default:
 			v, err := strconv.ParseFloat(fields[2], 64)
 			if err != nil {
 				log.Fatalf("failed to parse %q as float",
 					fields[2],
 				)
 			}
-			param.Values = append(param.Values, v)
-			num++
+			ret = append(ret,
+				Param{
+					Name:  fields[0],
+					Atom:  fields[1],
+					Value: v,
+				})
 		}
 	}
 	return
