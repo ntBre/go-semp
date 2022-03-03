@@ -10,10 +10,29 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	LoadConfig("testfiles/test.in")
-	// if !reflect.DeepEqual(got, want) {
-	// 	t.Errorf("got %v, wanted %v\n", got, want)
-	// }
+	got := LoadConfig("testfiles/test.in")
+	want := Config{
+		Params: []Param{
+			{"USS", "H", -11.246958000000},
+			{"ZS", "H", 1.268641000000},
+			{"BETAS", "H", -8.352984000000},
+			{"GSS", "H", 14.448686000000},
+			{"USS", "C", -51.089653000000},
+			{"UPP", "C", -39.937920000000},
+			{"ZS", "C", 2.047558000000},
+			{"ZP", "C", 1.702841000000},
+			{"BETAS", "C", -15.385236000000},
+			{"BETAP", "C", -7.471929000000},
+			{"GSS", "C", 13.335519000000},
+			{"GPP", "C", 10.778326000000},
+			{"GSP", "C", 11.528134000000},
+			{"GP2", "C", 9.486212000000},
+			{"HSP", "C", 0.717322000000},
+		},
+	}
+	if !compParams(got.Params, want.Params, 1e-12) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
 }
 
 func TestLoadGeoms(t *testing.T) {
@@ -81,7 +100,7 @@ func compParams(a, b []Param, eps float64) bool {
 
 func TestLoadParams(t *testing.T) {
 	rc := LoadConfig("testfiles/test.in")
-	got := LoadParams(rc.Params)
+	got := rc.Params
 	want := []Param{
 		{"USS", "H", -11.246958000000},
 		{"ZS", "H", 1.268641000000},

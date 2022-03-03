@@ -502,7 +502,7 @@ func main() {
 	geoms := LoadGeoms(*geomFile)
 	paramLog, _ := os.Create("params.log")
 	ai := LoadEnergies(*energyFile)
-	params := LoadParams(LoadConfig("semp.in").Params)
+	params := LoadConfig("semp.in").Params
 	fmt.Printf("loaded %d params\n", len(params))
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(labels, geoms, params, 0, None)
@@ -572,7 +572,8 @@ func main() {
 			// gamma monotonicity violated, take the bad step and
 			// move on. probably trapped at a local minimum
 			if (i > 0 && gamma-lastGamma > 1e-6) ||
-				norm-lastNorm > dNorm { // dNorm increased
+				norm-lastNorm > dNorm || // dNorm increased
+				i > 9 { // too many tries
 				break
 			}
 			lastGamma = gamma

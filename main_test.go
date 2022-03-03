@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"testing"
@@ -12,7 +14,7 @@ import (
 
 func TestWriteParams(t *testing.T) {
 	var b bytes.Buffer
-	p := LoadParams(LoadConfig("testfiles/test.in").Params)
+	p := LoadConfig("testfiles/test.in").Params
 	WriteParams(&b, p)
 	got := b.String()
 	want := `USS            H    -11.246958000000
@@ -128,7 +130,7 @@ func TestNumJac(t *testing.T) {
 	got := NumJac(
 		[]string{"C", "C", "C", "H", "H"},
 		LoadGeoms("testfiles/three07"),
-		LoadParams(LoadConfig("testfiles/test.in").Params),
+		LoadConfig("testfiles/test.in").Params,
 	)
 	want := mat.NewDense(3, 15, []float64{
 		-0.01497188, 0.20599558, 0.04540870,
@@ -147,7 +149,15 @@ func TestNumJac(t *testing.T) {
 		0.14539861, -0.06789877, -0.00041641,
 		-0.05106358, 0.26227226, -0.04426819,
 	})
-	if !compMat(got, want, 1e-7) {
+	eps := 1e-7
+	if !compMat(got, want, eps) {
+		g := got.RawMatrix().Data
+		w := want.RawMatrix().Data
+		for i := range g {
+			if diff := g[i] - w[i]; math.Abs(diff) > eps {
+				fmt.Printf("%5d%20.12g\n", i, diff)
+			}
+		}
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 	TESTJAC = got
@@ -157,7 +167,7 @@ func TestLevMar(t *testing.T) {
 	got, _ := LevMar(TESTJAC,
 		LoadEnergies("testfiles/three.dat"),
 		LoadEnergies("testfiles/three.nrg.dat"),
-		LoadParams(LoadConfig("testfiles/test.in").Params),
+		LoadConfig("testfiles/test.in").Params,
 		1.0,
 	)
 	want := []Param{

@@ -16,7 +16,16 @@ type RawConf struct {
 	Params string
 }
 
-func LoadConfig(filename string) RawConf {
+func (rc RawConf) ToConfig() (conf Config) {
+	conf.Params = LoadParams(rc.Params)
+	return
+}
+
+type Config struct {
+	Params []Param
+}
+
+func LoadConfig(filename string) Config {
 	f, err := os.Open(filename)
 	defer f.Close()
 	if err != nil {
@@ -31,7 +40,7 @@ func LoadConfig(filename string) RawConf {
 	if err != nil {
 		panic(err)
 	}
-	return *rc
+	return rc.ToConfig()
 }
 
 func LoadGeoms(filename string) (ret [][]float64) {
