@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"testing"
 
@@ -60,18 +61,18 @@ func TestLoadEnergies(t *testing.T) {
 	}
 }
 
-func compParams(a, b []Param) bool {
+func compParams(a, b []Param, eps float64) bool {
 	for i := range a {
 		if a[i].Atom != b[i].Atom {
-			fmt.Println(a[i], b[i])
+			fmt.Printf("atom: %q vs %q\n", a[i], b[i])
 			return false
 		}
 		if a[i].Name != b[i].Name {
-			fmt.Println(a[i], b[i])
+			fmt.Printf("name: %q vs %q\n", a[i], b[i])
 			return false
 		}
-		if a[i].Value != b[i].Value {
-			fmt.Println(a[i], b[i])
+		if math.Abs(a[i].Value-b[i].Value) > eps {
+			fmt.Printf("value: %q vs %q\n", a[i], b[i])
 			return false
 		}
 	}
@@ -98,7 +99,7 @@ func TestLoadParams(t *testing.T) {
 		{"GP2", "C", 9.486212000000},
 		{"HSP", "C", 0.717322000000},
 	}
-	if !compParams(got, want) {
+	if !compParams(got, want, 1e-12) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

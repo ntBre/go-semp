@@ -72,6 +72,8 @@ H      0.000000000000     -3.014627239000      1.713896351000
 	}
 }
 
+var TESTJAC *mat.Dense
+
 func TestNumJac(t *testing.T) {
 	tmp := PBS_TEMPLATE
 	var err error
@@ -110,6 +112,36 @@ func TestNumJac(t *testing.T) {
 		-0.05106358, 0.26227226, -0.04426819,
 	})
 	if !compMat(got, want, 1e-7) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+	TESTJAC = got
+}
+
+func TestLevMar(t *testing.T) {
+	got, _ := LevMar(TESTJAC,
+		LoadEnergies("testfiles/three.dat"),
+		LoadEnergies("testfiles/three.nrg.dat"),
+		LoadParams(LoadConfig("testfiles/test.in").Params),
+		1.0,
+	)
+	want := []Param{
+		{"USS", "H", -10.367883047437},
+		{"ZS", "H", 1.215268220252},
+		{"BETAS", "H", -8.739427051094},
+		{"GSS", "H", 12.724944577073},
+		{"USS", "C", -51.004152272936},
+		{"UPP", "C", -40.021839956047},
+		{"ZS", "C", 2.041117221309},
+		{"ZP", "C", 1.694803991853},
+		{"BETAS", "C", -15.546321646344},
+		{"BETAP", "C", -7.578605930451},
+		{"GSS", "C", 13.419037030316},
+		{"GPP", "C", 11.232884059306},
+		{"GSP", "C", 12.127694620927},
+		{"GP2", "C", 9.420331106671},
+		{"HSP", "C", 1.662217856082},
+	}
+	if !compParams(got, want, 1e-12) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

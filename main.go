@@ -81,21 +81,6 @@ var (
 	ErrFileNotFound   = errors.New("Output file not found")
 )
 
-type Param struct {
-	Name  string
-	Atom  string
-	Value float64
-}
-
-type Params []Param
-
-func (p Params) Values() (ret []float64) {
-	for i := range p {
-		ret = append(ret, p[i].Value)
-	}
-	return
-}
-
 // WriteParams formats params for use in a MOPAC input file and
 // writes them to w
 func WriteParams(w io.Writer, params []Param) error {
@@ -245,13 +230,13 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	for i := range params {
 		if *debug {
 			fmt.Printf("before:%12.9f\n",
-				Params(params).Values())
+				Values(params))
 		}
 		jobs = append(jobs,
 			CentralDiff(names, geoms, params, i, col)...)
 		if *debug {
 			fmt.Printf(" after:%12.9f\n",
-				Params(params).Values())
+				Values(params))
 		}
 		col++
 	}
