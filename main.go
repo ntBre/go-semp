@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -248,7 +249,7 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 }
 
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
-	newParams []Param) {
+	newParams []Param, gamma float64) {
 	// LHS
 	var a mat.Dense
 	a.Mul(jac.T(), jac)
@@ -304,6 +305,12 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
 	for i := 0; i < r; i++ {
 		d.Set(i, 0, d.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
+	// gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
+	gam := mat.NewDense(1, 1, nil)
+	gam.Mul(d.T(), &g)
+	magD := mat.Norm(&d, 2)
+	magG := mat.Norm(&g, 2)
+	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
 	newParams = UpdateParams(params, &d, scale)
 	return
 }
@@ -394,37 +401,6 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 	fmt.Fprintln(os.Stderr, "jobs done")
 }
 
-func Resubmit(job Job) Job {
-	src, err := os.Open(filepath.Join("inp", job.Filename+INFILE_SUFFIX))
-	defer src.Close()
-	if err != nil {
-		panic(err)
-	}
-	inp := filepath.Join("inp", job.Filename+"_redo"+INFILE_SUFFIX)
-	dst, err := os.Create(inp)
-	if err != nil {
-		panic(err)
-	}
-	defer dst.Close()
-	io.Copy(dst, src)
-	pbs := filepath.Join("inp", job.Filename+"_redo.pbs")
-	f, err := os.Create(pbs)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	WritePBS(f, job.Filename, []string{job.Filename + "_redo"})
-	fmt.Fprintf(os.Stderr, "resubmitting %s as %s\n",
-		job.Filename, job.Filename+"_redo")
-	return Job{
-		Filename: job.Filename + "_redo",
-		I:        job.I,
-		J:        job.J,
-		Jobid:    Submit(pbs),
-		Coeff:    job.Coeff,
-	}
-}
-
 func setup() {
 	os.RemoveAll("tmparam")
 	os.MkdirAll("tmparam", 0744)
@@ -438,8 +414,8 @@ func takedown() {
 
 func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
 	params []Param, step, lambda float64) (newParams []Param,
-	newSe *mat.Dense, norm, max float64) {
-	newParams = LevMar(jac, ai, se, params, step, lambda)
+	newSe *mat.Dense, norm, max, gamma float64) {
+	newParams, gamma = LevMar(jac, ai, se, params, step, lambda)
 	jobs := SEnergy(atoms, geoms, newParams, 0, None)
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	RunJobs(jobs, nrg)
@@ -493,22 +469,25 @@ func work(infile string) (norms []float64) {
 	var (
 		newParams []Param
 		newSe     *mat.Dense
+		gamma     float64
 	)
 	for iter <= conf.MaxIt && norm > THRESH {
 		jac := NumJac(conf.Atoms, geoms, params)
 		lambda /= NU
-		newParams, newSe, norm, max = inner(
+		newParams, newSe, norm, max, gamma = inner(
 			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
 		)
 
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
 		var (
-			bad bool
+			bad       bool
+			lastGamma float64
 		)
 		for i := 0; norm > lastNorm; i++ {
 			lambda *= NU
-			newParams, newSe, norm, max = inner(
+			dNorm := norm - lastNorm
+			newParams, newSe, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, 1.0, lambda,
 			)
@@ -516,15 +495,25 @@ func work(infile string) (norms []float64) {
 				"\tλ_%d to %g with ΔNorm = %f\n",
 				i, lambda, norm-lastNorm,
 			)
-			if i > MAX_TRIES {
+			switch {
+			case i > 0 && gamma-lastGamma > 1e-6:
+				log.Println("breaking gamma")
 				bad = true
+			case norm-lastNorm > dNorm:
+				log.Println("breaking norm")
+				bad = true
+			case i > MAX_TRIES:
+				log.Println("breaking i")
+				bad = true
+			}
+			if bad {
 				break
 			}
 		}
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
 			k = 1.0 / math.Pow(10, float64(i))
-			newParams, newSe, norm, max = inner(
+			newParams, newSe, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, k, lambda,
 			)

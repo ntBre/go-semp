@@ -189,7 +189,7 @@ func TestNumJac(t *testing.T) {
 }
 
 func TestLevMar(t *testing.T) {
-	got := LevMar(TESTJAC,
+	got, _ := LevMar(TESTJAC,
 		LoadEnergies("testfiles/three.dat"),
 		LoadEnergies("testfiles/three.nrg.dat"),
 		LoadConfig("testfiles/test.in").Params,
