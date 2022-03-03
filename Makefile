@@ -29,5 +29,5 @@ prof:
 	go test . -run=TestMain -cpuprofile=/tmp/semp.prof.out ${TESTFLAGS}
 
 cover:
-	go test . -v -coverprofile=/tmp/pbqff.out
+	go test . ${TESTFLAGS} -coverprofile=/tmp/pbqff.out
 	go tool cover -html /tmp/pbqff.out

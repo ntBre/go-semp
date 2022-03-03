@@ -12,6 +12,9 @@ import (
 func TestLoadConfig(t *testing.T) {
 	got := LoadConfig("testfiles/test.in")
 	want := Config{
+		GeomFile:   "file07",
+		EnergyFile: "rel.dat",
+		Atoms:      []string{"C", "C", "C", "H", "H"},
 		Params: []Param{
 			{"USS", "H", -11.246958000000},
 			{"ZS", "H", 1.268641000000},
@@ -29,9 +32,26 @@ func TestLoadConfig(t *testing.T) {
 			{"GP2", "C", 9.486212000000},
 			{"HSP", "C", 0.717322000000},
 		},
+		MaxIt:  250,
+		Lambda: 1e-8,
 	}
 	if !compParams(got.Params, want.Params, 1e-12) {
 		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+	if got.GeomFile != want.GeomFile {
+		t.Errorf("GeomFile: got %v, wanted %v\n", got, want)
+	}
+	if got.EnergyFile != want.EnergyFile {
+		t.Errorf("EnergyFile: got %v, wanted %v\n", got, want)
+	}
+	if !reflect.DeepEqual(got.Atoms, want.Atoms) {
+		t.Errorf("Atoms: got %v, wanted %v\n", got, want)
+	}
+	if got.MaxIt != want.MaxIt {
+		t.Errorf("MaxIt: got %v, wanted %v\n", got, want)
+	}
+	if got.Lambda != want.Lambda {
+		t.Errorf("Lambda: got %v, wanted %v\n", got, want)
 	}
 }
 

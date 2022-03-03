@@ -13,16 +13,31 @@ import (
 )
 
 type RawConf struct {
-	Params string
+	Params     string
+	Atoms      string
+	GeomFile   string
+	EnergyFile string
+	MaxIt      int
+	Lambda     float64
 }
 
 func (rc RawConf) ToConfig() (conf Config) {
 	conf.Params = LoadParams(rc.Params)
+	conf.Atoms = strings.Fields(rc.Atoms)
+	conf.GeomFile = rc.GeomFile
+	conf.EnergyFile = rc.EnergyFile
+	conf.MaxIt = rc.MaxIt
+	conf.Lambda = rc.Lambda
 	return
 }
 
 type Config struct {
-	Params []Param
+	GeomFile   string
+	EnergyFile string
+	Params     []Param
+	Atoms      []string
+	MaxIt      int
+	Lambda     float64
 }
 
 func LoadConfig(filename string) Config {
@@ -35,8 +50,14 @@ func LoadConfig(filename string) Config {
 	if err != nil {
 		panic(err)
 	}
-	rc := new(RawConf)
-	err = toml.Unmarshal(cont, rc)
+	// Defaults
+	rc := RawConf{
+		GeomFile:   "file07",
+		EnergyFile: "rel.dat",
+		MaxIt:      250,
+		Lambda:     1e-8,
+	}
+	err = toml.Unmarshal(cont, &rc)
 	if err != nil {
 		panic(err)
 	}

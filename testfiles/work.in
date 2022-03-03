@@ -16,3 +16,6 @@ GP2            C      9.486212000000
 HSP            C      0.717322000000
 """
 atoms = "C C C H H"
+maxit = 5
+energyfile = "testfiles/five.dat"
+geomfile = "testfiles/five07"

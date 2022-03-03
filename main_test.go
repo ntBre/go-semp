@@ -40,7 +40,7 @@ HSP            C      0.717322000000
 	}
 }
 
-func TestMain(t *testing.T) {
+func TestEnergies(t *testing.T) {
 	if !testing.Short() {
 		t.Skip()
 	}
@@ -73,6 +73,31 @@ func TestMain(t *testing.T) {
 	if norm, fail := vecNorm(got, mopac, 1e-10); fail {
 		t.Errorf("mopac mismatch with norm %.8e\n", norm)
 		vecDiff(got, mopac)
+	}
+}
+
+func TestWork(t *testing.T) {
+	if !testing.Short() {
+		t.Skip()
+	}
+	setup()
+	tmp := PBS_TEMPLATE
+	var err error
+	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cmd := SUBMIT_CMD
+	SUBMIT_CMD = "bash"
+	defer func() {
+		PBS_TEMPLATE = tmp
+		SUBMIT_CMD = cmd
+		test_takedown()
+	}()
+	got := work("testfiles/work.in")
+	want := []float64{447.1502, 42.6167, 0.9004}
+	if !compFloat(got, want, 1e-4) {
+		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
 
@@ -168,7 +193,7 @@ func TestLevMar(t *testing.T) {
 		LoadEnergies("testfiles/three.dat"),
 		LoadEnergies("testfiles/three.nrg.dat"),
 		LoadConfig("testfiles/test.in").Params,
-		1.0,
+		1.0, 1e-8,
 	)
 	want := []Param{
 		{"USS", "H", -10.367883047437},

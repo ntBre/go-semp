@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -31,24 +30,6 @@ const (
 )
 
 var (
-	// set representing derived semi-empirical parameters
-	DERIVED_PARAMS = map[string]struct{}{
-		"DD2":   {},
-		"DD3":   {},
-		"=":     {},
-		"PO1":   {},
-		"PO2":   {},
-		"PO3":   {},
-		"PO7":   {},
-		"PO9":   {},
-		"EISOL": {},
-		"CORE":  {},
-		"EHEAT": {},
-		// not derived, but singular for H
-		"FN11": {},
-		"FN21": {},
-		"FN31": {},
-	}
 	CHARGE = 0
 	SPIN   = 1
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
@@ -59,20 +40,10 @@ var (
 
 // Flags
 var (
-	atoms    = flag.String("atoms", "", "specify the atom labels")
-	geomFile = flag.String("geoms", "file07",
-		"file containing the list of geometries")
-	energyFile = flag.String("energies", "rel.dat",
-		"file containing the training energies corresponding to -geoms")
-	paramFile = flag.String("params", "opt.out",
-		"file containing the initial semi-empirical parameters")
 	debug      = flag.Bool("debug", false, "toggle debugging information")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
-	lambda     = flag.Float64("lambda", 1e-8,
-		"initial lambda value for levmar")
-	maxit = flag.Int("maxit", 250, "maximum iterations")
-	one   = flag.Bool("one", false,
+	one        = flag.Bool("one", false,
 		"write the initial SE energies and exit")
 )
 
@@ -276,7 +247,7 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	return ret
 }
 
-func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
 	newParams []Param) {
 	// LHS
 	var a mat.Dense
@@ -295,7 +266,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) (
 	}
 	eye := Identity(r)
 	var Leye mat.Dense
-	Leye.Scale(*lambda, eye)
+	Leye.Scale(lambda, eye)
 	var lhs mat.Dense
 	lhs.Add(Astar, &Leye)
 	// RHS
@@ -468,9 +439,6 @@ func takedown() {
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
-	if *atoms == "" {
-		log.Fatalln("-atoms flag is required, aborting")
-	}
 	args := flag.Args()
 	infile := "semp"
 	if len(args) >= 1 {
@@ -478,7 +446,6 @@ func main() {
 	}
 	DupOutErr(infile)
 	fmt.Printf("running on host: %s\n", host)
-	fmt.Printf("initial lambda: %.14f\n", *lambda)
 	if *debug {
 		os.Mkdir("debug", 0744)
 	}
@@ -492,14 +459,19 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
-	labels := strings.Fields(*atoms)
-	geoms := LoadGeoms(*geomFile)
+	work("semp.in")
+}
+
+func work(infile string) (norms []float64) {
+	conf := LoadConfig(infile)
+	geoms := LoadGeoms(conf.GeomFile)
 	paramLog, _ := os.Create("params.log")
-	ai := LoadEnergies(*energyFile)
-	params := LoadConfig("semp.in").Params
+	ai := LoadEnergies(conf.EnergyFile)
+	params := conf.Params
+	lambda := conf.Lambda
 	fmt.Printf("loaded %d params\n", len(params))
 	nrg := mat.NewDense(len(geoms), 1, nil)
-	jobs := SEnergy(labels, geoms, params, 0, None)
+	jobs := SEnergy(conf.Atoms, geoms, params, 0, None)
 	RunJobs(jobs, nrg)
 	if *one {
 		DumpVec(nrg)
@@ -524,12 +496,13 @@ func main() {
 	lastNorm = norm
 	lastRMSD = rmsd
 	start := time.Now()
-	for iter <= *maxit && norm > THRESH {
-		jac := NumJac(labels, geoms, params)
-		*lambda /= NU
+	norms = []float64{norm}
+	for iter <= conf.MaxIt && norm > THRESH {
+		jac := NumJac(conf.Atoms, geoms, params)
+		lambda /= NU
 		// BEGIN copy-paste
-		newParams := LevMar(jac, ai, se, params, 1.0)
-		jobs = SEnergy(labels, geoms, newParams, 0, None)
+		newParams := LevMar(jac, ai, se, params, 1.0, lambda)
+		jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
 		nrg.Zero()
 		RunJobs(jobs, nrg)
 		newSe := Relative(nrg)
@@ -542,16 +515,16 @@ func main() {
 			bad bool
 		)
 		for i := 0; norm > lastNorm; i++ {
-			*lambda *= NU
-			newParams := LevMar(jac, ai, se, params, 1.0)
-			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			lambda *= NU
+			newParams := LevMar(jac, ai, se, params, 1.0, lambda)
+			jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
 			norm, max = Norm(ai, newSe)
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f\n",
-				i, *lambda, norm-lastNorm,
+				i, lambda, norm-lastNorm,
 			)
 			if i > MAX_TRIES {
 				break
@@ -560,9 +533,9 @@ func main() {
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
 			k = 1.0 / math.Pow(10, float64(i))
-			newParams := LevMar(jac, ai, se, params, k)
+			newParams := LevMar(jac, ai, se, params, k, lambda)
 			DumpParams(newParams, "inp/params.dat")
-			jobs = SEnergy(labels, geoms, newParams, 0, None)
+			jobs = SEnergy(conf.Atoms, geoms, newParams, 0, None)
 			nrg.Zero()
 			RunJobs(jobs, nrg)
 			newSe = Relative(nrg)
@@ -575,6 +548,7 @@ func main() {
 		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
 			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
 			float64(time.Since(start))/1e9)
+		norms = append(norms, norm)
 		start = time.Now()
 		lastNorm = norm
 		lastRMSD = rmsd
@@ -583,4 +557,5 @@ func main() {
 		LogParams(paramLog, params, iter)
 		iter++
 	}
+	return
 }

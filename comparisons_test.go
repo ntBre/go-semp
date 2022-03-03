@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"gonum.org/v1/gonum/mat"
@@ -55,4 +56,13 @@ func compMat(a, b *mat.Dense, eps float64) bool {
 	var diff mat.Dense
 	diff.Sub(a, b)
 	return mat.Norm(&diff, 2) < eps
+}
+
+func compFloat(a, b []float64, eps float64) bool {
+	for i := range a {
+		if math.Abs(a[i]-b[i]) > eps {
+			return false
+		}
+	}
+	return true
 }
