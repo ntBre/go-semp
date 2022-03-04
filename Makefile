@@ -6,7 +6,13 @@ ifeq ($(SHORT),1)
 TESTFLAGS += -short
 endif
 
-semp : *.go *.tmpl
+version.go: .git
+	echo -e "package main\n" > $@
+	echo -n "var VERSION = \"" >> $@
+	git rev-parse --short HEAD | tr -d '\n' >> $@
+	echo "\"" >> $@
+
+semp : *.go *.tmpl version.go
 	go build .
 
 files :

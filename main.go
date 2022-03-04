@@ -46,6 +46,7 @@ var (
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	one        = flag.Bool("one", false,
 		"write the initial SE energies and exit")
+	version = flag.Bool("v", false, "print version number and exit")
 )
 
 // Errors
@@ -530,12 +531,17 @@ func work(infile string) (norms []float64) {
 func main() {
 	host, _ := os.Hostname()
 	flag.Parse()
+	if *version {
+		fmt.Printf("semp version %s\n", VERSION)
+		os.Exit(0)
+	}
 	args := flag.Args()
 	infile := "semp"
 	if len(args) >= 1 {
 		infile = args[0]
 	}
 	DupOutErr(infile)
+	fmt.Printf("semp version %s\n", VERSION)
 	fmt.Printf("running on host: %s\n", host)
 	if *debug {
 		os.Mkdir("debug", 0744)
