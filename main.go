@@ -40,12 +40,9 @@ var (
 
 // Flags
 var (
-	debug = flag.String("debug", "",
-		"toggle debugging information (params|jac)")
-	cpuprofile = flag.String("cpu", "", "write a CPU profile")
-	gauss      = flag.String("gauss", "g16", "command to run gaussian")
-	one        = flag.Bool("one", false,
-		"write the initial SE energies and exit")
+	debug   = flag.String("debug", "", "enable debug info (params|jac)")
+	cpuprof = flag.String("cpu", "", "write a CPU profile")
+	one     = flag.Bool("one", false, "compute initial SE energies and exit")
 	version = flag.Bool("v", false, "print version number and exit")
 )
 
@@ -534,8 +531,8 @@ func main() {
 	fmt.Printf("running on host: %s\n", host)
 	setup()
 	defer takedown()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+	if *cpuprof != "" {
+		f, err := os.Create(*cpuprof)
 		if err != nil {
 			panic(err)
 		}
