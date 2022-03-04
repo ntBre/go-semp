@@ -41,7 +41,8 @@ var (
 
 // Flags
 var (
-	debug      = flag.Bool("debug", false, "toggle debugging information")
+	debug = flag.String("debug", "",
+		"toggle debugging information (params|jac)")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
 	one        = flag.Bool("one", false,
@@ -193,13 +194,13 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	// Set up all the Jobs for the Jacobian
 	jobs := make([]Job, 0)
 	for i := range params {
-		if *debug {
+		if *debug == "params" {
 			fmt.Printf("before:%12.9f\n",
 				Values(params))
 		}
 		jobs = append(jobs,
 			CentralDiff(names, geoms, params, i, col)...)
-		if *debug {
+		if *debug == "params" {
 			fmt.Printf(" after:%12.9f\n",
 				Values(params))
 		}
@@ -209,6 +210,9 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 	// 	params[p].Names[i], params[p].Atom)
 	cleanup()
+	if *debug == "jac" {
+		DumpMat(jac)
+	}
 	return jac
 }
 
@@ -317,11 +321,6 @@ func Filenames(jobs []Job) []string {
 
 // RunJobs runs jobs and stores the results in target
 func RunJobs(jobs []Job, target *mat.Dense) {
-	var check *mat.Dense
-	if *debug {
-		r, c := target.Dims()
-		check = mat.NewDense(r, c, nil)
-	}
 	var pbs int
 	chunkees := make([]Job, 0, CHUNK)
 	runJobs := make([]Job, 0, len(jobs))
@@ -360,10 +359,6 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 			)
 			if err == nil {
 				shortened++
-				if *debug {
-					check.Set(job.I, job.J,
-						check.At(job.I, job.J)+1)
-				}
 				target.Set(job.I, job.J,
 					target.At(job.I, job.J)+
 						job.Coeff*energy)
@@ -386,9 +381,6 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				"%d jobs remaining\n", len(runJobs))
 		}
 		shortened = 0
-	}
-	if *debug {
-		DumpMat(check)
 	}
 	fmt.Fprintln(os.Stderr, "jobs done")
 }
@@ -543,9 +535,6 @@ func main() {
 	DupOutErr(infile)
 	fmt.Printf("semp version %s\n", VERSION)
 	fmt.Printf("running on host: %s\n", host)
-	if *debug {
-		os.Mkdir("debug", 0744)
-	}
 	setup()
 	defer takedown()
 	if *cpuprofile != "" {
