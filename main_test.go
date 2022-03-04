@@ -188,8 +188,13 @@ func TestNumJac(t *testing.T) {
 	TESTJAC = got
 }
 
+var (
+	TESTSTEP   *mat.Dense
+	TESTPARAMS []Param
+)
+
 func TestLevMar(t *testing.T) {
-	got, _, _ := LevMar(TESTJAC,
+	TESTPARAMS, _, TESTSTEP = LevMar(TESTJAC,
 		LoadEnergies("testfiles/three.dat"),
 		LoadEnergies("testfiles/three.nrg.dat"),
 		LoadConfig("testfiles/test.in").Params,
@@ -212,7 +217,57 @@ func TestLevMar(t *testing.T) {
 		{"GP2", "C", 9.420331106671},
 		{"HSP", "C", 1.662217856082},
 	}
-	if !compParams(got, want, 1e-12) {
+	if !compParams(TESTPARAMS, want, 1e-12) {
+		t.Errorf("got %v, wanted %v\n", TESTPARAMS, want)
+	}
+}
+
+func TestBroyden(t *testing.T) {
+	tmp := PBS_TEMPLATE
+	var err error
+	PBS_TEMPLATE, err = template.ParseFiles("testfiles/local.tmpl")
+	if err != nil {
+		panic(err)
+	}
+	cmd := SUBMIT_CMD
+	SUBMIT_CMD = "bash"
+	defer func() {
+		PBS_TEMPLATE = tmp
+		SUBMIT_CMD = cmd
+		test_takedown()
+	}()
+	setup()
+	geoms := LoadGeoms("testfiles/three07")
+	atoms := []string{"C", "C", "C", "H", "H"}
+	params := LoadConfig("testfiles/test.in").Params
+	nrg := mat.NewDense(len(geoms), 1, nil)
+	jobs := SEnergy(atoms, geoms, params, 0, None)
+	RunJobs(jobs, nrg)
+	seOld := Relative(nrg)
+	jobs = SEnergy(atoms, geoms, TESTPARAMS, 0, None)
+	nrg.Zero()
+	RunJobs(jobs, nrg)
+	seNew := Relative(nrg)
+	got := Broyden(TESTJAC, TESTSTEP, seOld, seNew)
+	r, c := TESTJAC.Dims()
+	want := mat.NewDense(r, c, []float64{
+		0.06197344, 0.20132387, 0.01158339,
+		-0.14330951, -0.06895214, 0.08406194,
+		0.60387641, 1.26558131, 0.05203623,
+		0.13514664, -0.06076483, 0.04088183,
+		0.00209303, 0.25396902, 0.03810811,
+		0.06192401, 0.20061590, 0.01160329,
+		-0.14327877, -0.06919690, 0.08432796,
+		0.60178026, 1.25966567, 0.05257746,
+		0.13600519, -0.06048036, 0.03940159,
+		0.00131118, 0.25644298, 0.03822692,
+		0.06188915, 0.20078687, 0.01161012,
+		-0.14322513, -0.06933170, 0.08447141,
+		0.60294922, 1.26082106, 0.05266372,
+		0.13606785, -0.06059366, 0.03934263,
+		0.00137847, 0.25650983, 0.03837945,
+	})
+	if !compMat(got, want, 1e-7) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
