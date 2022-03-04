@@ -206,6 +206,29 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	return jac
 }
 
+// Broyden computes the rank-one Broyden update of `jac` from
+// https://en.wikipedia.org/wiki/Broyden%27s_method
+func Broyden(jac, step, seOld, seNew *mat.Dense) *mat.Dense {
+	// Jₙ₋₁Δx
+	var prod mat.Dense
+	prod.Mul(jac, step)
+	// Δf
+	var dF mat.Dense
+	dF.Sub(seNew, seOld)
+	// Δf - Jₙ₋₁Δx
+	var numer mat.Dense
+	numer.Sub(&dF, &prod)
+	// ||Δx||²
+	denom := mat.Norm(step, 2)
+	// numerator / denominator
+	numer.Scale(1/denom, &numer)
+	var update mat.Dense
+	update.Mul(&numer, step.T())
+	var ret mat.Dense
+	ret.Add(jac, &update)
+	return &ret
+}
+
 // Remove the `inp` directory and recreate it
 func cleanup() {
 	if err := os.RemoveAll("inp"); err != nil {
@@ -235,7 +258,7 @@ func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 }
 
 func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
-	newParams []Param, gamma float64) {
+	newParams []Param, gamma float64, step *mat.Dense) {
 	// LHS
 	var a mat.Dense
 	a.Mul(jac.T(), jac)
@@ -291,6 +314,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
 	for i := 0; i < r; i++ {
 		d.Set(i, 0, d.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
+	step = mat.DenseCopyOf(&d)
 	// gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
 	gam := mat.NewDense(1, 1, nil)
 	gam.Mul(d.T(), &g)
@@ -392,8 +416,8 @@ func takedown() {
 
 func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
 	params []Param, scale, lambda float64) (newParams []Param,
-	newSe *mat.Dense, norm, max, gamma float64) {
-	newParams, gamma = LevMar(jac, ai, se, params, scale, lambda)
+	newSe, step *mat.Dense, norm, max, gamma float64) {
+	newParams, gamma, step = LevMar(jac, ai, se, params, scale, lambda)
 	jobs := SEnergy(atoms, geoms, newParams, 0, None)
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	RunJobs(jobs, nrg)
@@ -445,6 +469,7 @@ func work(infile string) (norms []float64) {
 	var (
 		newParams []Param
 		newSe     *mat.Dense
+		step      *mat.Dense
 		gamma     float64
 		delNorm   float64 = 1
 	)
@@ -452,7 +477,7 @@ func work(infile string) (norms []float64) {
 		math.Abs(delNorm) > 1e-4; iter++ {
 		jac := NumJac(conf.Atoms, geoms, params)
 		lambda /= NU
-		newParams, newSe, norm, max, gamma = inner(
+		newParams, newSe, step, norm, max, gamma = inner(
 			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
 		)
 
@@ -465,7 +490,7 @@ func work(infile string) (norms []float64) {
 		for i := 0; norm > lastNorm; i++ {
 			lambda *= NU
 			dNorm := norm - lastNorm
-			newParams, newSe, norm, max, gamma = inner(
+			newParams, newSe, step, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, 1.0, lambda,
 			)
@@ -491,13 +516,16 @@ func work(infile string) (norms []float64) {
 		var k float64 = 1
 		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
 			k = 1.0 / math.Pow(10, float64(i))
-			newParams, newSe, norm, max, gamma = inner(
+			newParams, newSe, step, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, k, lambda,
 			)
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
+		}
+		if *debug == "step" {
+			DumpVec(step)
 		}
 		rmsd = RMSD(ai, newSe) * htToCm
 		printStep(iter, norm, lastNorm, rmsd, lastRMSD, max,
