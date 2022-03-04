@@ -391,9 +391,9 @@ func takedown() {
 }
 
 func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
-	params []Param, step, lambda float64) (newParams []Param,
+	params []Param, scale, lambda float64) (newParams []Param,
 	newSe *mat.Dense, norm, max, gamma float64) {
-	newParams, gamma = LevMar(jac, ai, se, params, step, lambda)
+	newParams, gamma = LevMar(jac, ai, se, params, scale, lambda)
 	jobs := SEnergy(atoms, geoms, newParams, 0, None)
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	RunJobs(jobs, nrg)
