@@ -13,12 +13,28 @@ import (
 )
 
 type RawConf struct {
-	Params     string
-	Atoms      string
-	GeomFile   string
+	// Intial semi-empirical parameters to be optimized, in MOPAC input
+	// format. See MOPAC documentation for the external keyword for details
+	Params string
+	// Space-delimited list of atom labels like "C C C H H"
+	Atoms string
+	// INTDER-style file containg a list of geometries, defaults to file07
+	GeomFile string
+	// File containing a list of ab initio/training energies, defaults to
+	// rel.dat
 	EnergyFile string
-	MaxIt      int
-	Lambda     float64
+	// The maximum number of iterations the optimization should run,
+	// defaults to 250
+	MaxIt int
+	// The initial value for the lambda parameter in the Levenberg-Marquardt
+	// algorithm, defaults to 1e-8
+	Lambda float64
+	// Whether or not the rank-one Broyden update should be used to
+	// approximate the Jacobian
+	Broyden bool
+	// The interval at which to compute a full numerical Jacobian if Broyden
+	// is used, defaults to 5
+	BroydInt int
 }
 
 func (rc RawConf) ToConfig() (conf Config) {
@@ -28,6 +44,8 @@ func (rc RawConf) ToConfig() (conf Config) {
 	conf.EnergyFile = rc.EnergyFile
 	conf.MaxIt = rc.MaxIt
 	conf.Lambda = rc.Lambda
+	conf.Broyden = rc.Broyden
+	conf.BroydInt = rc.BroydInt
 	return
 }
 
@@ -38,6 +56,8 @@ type Config struct {
 	Atoms      []string
 	MaxIt      int
 	Lambda     float64
+	Broyden    bool
+	BroydInt   int
 }
 
 func LoadConfig(filename string) Config {
@@ -56,6 +76,8 @@ func LoadConfig(filename string) Config {
 		EnergyFile: "rel.dat",
 		MaxIt:      250,
 		Lambda:     1e-8,
+		Broyden:    false,
+		BroydInt:   5,
 	}
 	err = toml.Unmarshal(cont, &rc)
 	if err != nil {

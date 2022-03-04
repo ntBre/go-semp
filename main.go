@@ -469,13 +469,19 @@ func work(infile string) (norms []float64) {
 	var (
 		newParams []Param
 		newSe     *mat.Dense
+		oldSe     *mat.Dense
 		step      *mat.Dense
 		gamma     float64
 		delNorm   float64 = 1
+		jac       *mat.Dense
 	)
 	for iter := 1; iter <= conf.MaxIt && norm > THRESH &&
 		math.Abs(delNorm) > 1e-4; iter++ {
-		jac := NumJac(conf.Atoms, geoms, params)
+		if conf.Broyden && iter > 1 && iter%conf.BroydInt != 0 {
+			jac = Broyden(jac, step, oldSe, newSe)
+		} else {
+			jac = NumJac(conf.Atoms, geoms, params)
+		}
 		lambda /= NU
 		newParams, newSe, step, norm, max, gamma = inner(
 			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
@@ -536,6 +542,7 @@ func work(infile string) (norms []float64) {
 		lastNorm = norm
 		lastRMSD = rmsd
 		params = newParams
+		oldSe = se
 		se = newSe
 		LogParams(paramLog, params, iter)
 	}
