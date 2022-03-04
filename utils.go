@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,13 +18,6 @@ const (
 	// from https://physics.nist.gov/cgi-bin/cuu/Value?bohrrada0
 	toAng = 0.5291_772_109_03
 )
-
-func Len(params []Param) (sum int) {
-	for _, p := range params {
-		sum += len(p.Names)
-	}
-	return sum
-}
 
 func Sub(a, b []float64) []float64 {
 	ret := make([]float64, len(a))
@@ -47,8 +41,10 @@ func ZipGeom(names []string, coords []float64) string {
 	var geom strings.Builder
 	for i := range names {
 		fmt.Fprintf(&geom, "%s%20.12f%20.12f%20.12f\n",
-			names[i], coords[3*i]*toAng,
-			coords[3*i+1]*toAng, coords[3*i+2]*toAng,
+			names[i],
+			coords[3*i],
+			coords[3*i+1],
+			coords[3*i+2],
 		)
 	}
 	return geom.String()
@@ -81,12 +77,12 @@ func DumpVec(a *mat.Dense) {
 		panic("more than one column in expected vector")
 	}
 	for i := 0; i < r; i++ {
-		fmt.Printf("%5d%20.12f\n", i, a.At(i, 0))
+		fmt.Fprintf(os.Stderr, "%5d%20.12f\n", i, a.At(i, 0))
 	}
 }
 
 func DumpMat(m mat.Matrix) {
-	WriteMat(os.Stdout, m)
+	WriteMat(os.Stderr, m)
 }
 
 func DumpJac(m mat.Matrix) {
@@ -128,4 +124,9 @@ func DupOutErr(infile string) {
 	errfile, _ := os.Create(base + ".log")
 	syscall.Dup2(int(outfile.Fd()), 1)
 	syscall.Dup2(int(errfile.Fd()), 2)
+}
+
+func TrimExt(filename string) string {
+	lext := len(filepath.Ext(filename))
+	return filename[:len(filename)-lext]
 }

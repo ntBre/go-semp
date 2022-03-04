@@ -1,11 +1,59 @@
 package main
 
 import (
+	"fmt"
+	"math"
 	"reflect"
 	"testing"
 
 	"gonum.org/v1/gonum/mat"
 )
+
+func TestLoadConfig(t *testing.T) {
+	got := LoadConfig("testfiles/test.in")
+	want := Config{
+		GeomFile:   "file07",
+		EnergyFile: "rel.dat",
+		Atoms:      []string{"C", "C", "C", "H", "H"},
+		Params: []Param{
+			{"USS", "H", -11.246958000000},
+			{"ZS", "H", 1.268641000000},
+			{"BETAS", "H", -8.352984000000},
+			{"GSS", "H", 14.448686000000},
+			{"USS", "C", -51.089653000000},
+			{"UPP", "C", -39.937920000000},
+			{"ZS", "C", 2.047558000000},
+			{"ZP", "C", 1.702841000000},
+			{"BETAS", "C", -15.385236000000},
+			{"BETAP", "C", -7.471929000000},
+			{"GSS", "C", 13.335519000000},
+			{"GPP", "C", 10.778326000000},
+			{"GSP", "C", 11.528134000000},
+			{"GP2", "C", 9.486212000000},
+			{"HSP", "C", 0.717322000000},
+		},
+		MaxIt:  250,
+		Lambda: 1e-8,
+	}
+	if !compParams(got.Params, want.Params, 1e-12) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+	if got.GeomFile != want.GeomFile {
+		t.Errorf("GeomFile: got %v, wanted %v\n", got, want)
+	}
+	if got.EnergyFile != want.EnergyFile {
+		t.Errorf("EnergyFile: got %v, wanted %v\n", got, want)
+	}
+	if !reflect.DeepEqual(got.Atoms, want.Atoms) {
+		t.Errorf("Atoms: got %v, wanted %v\n", got, want)
+	}
+	if got.MaxIt != want.MaxIt {
+		t.Errorf("MaxIt: got %v, wanted %v\n", got, want)
+	}
+	if got.Lambda != want.Lambda {
+		t.Errorf("Lambda: got %v, wanted %v\n", got, want)
+	}
+}
 
 func TestLoadGeoms(t *testing.T) {
 	got := LoadGeoms("testfiles/three07")
@@ -52,81 +100,45 @@ func TestLoadEnergies(t *testing.T) {
 	}
 }
 
-func TestLoadParams(t *testing.T) {
-	delete(DERIVED_PARAMS, "GCore")
-	tests := []struct {
-		infile string
-		want   []Param
-	}{
-		{
-			infile: "testfiles/opt.out",
-			want: []Param{
-				{
-					"H",
-					[]string{
-						"F0ss", "ZetaOverlap", "U", "Beta", "CoreKO",
-						"GCore", "GCore", "GCore",
-					},
-					[]float64{
-						0.5309794405, 1.268641, -0.4133181015,
-						-0.3069665138, 0.9416560451, 0.0016794859,
-						0.8557539975, 3.3750716455,
-					},
-				},
-				{
-					"C",
-					[]string{"F0ss", "F0sp", "F0pp", "F2pp", "G1sp",
-						"ZetaOverlap", "ZetaOverlap", "U", "U",
-						"Beta", "Beta", "CoreKO", "GCore", "GCore",
-						"GCore",
-					},
-					[]float64{
-						0.490071306, 0.4236511293, 0.3644399818,
-						0.1978513158, 0.0790832954, 2.047558,
-						1.702841, -1.8775102017, -1.4676915546,
-						-0.5653970197, -0.2745883383, 1.0202596926,
-						0.003215496, 0.588117579, 2.5208171714,
-					},
-				},
-			},
-		},
-		{
-			infile: "testfiles/params.dat",
-			want: []Param{
-				{
-					"H",
-					[]string{
-						"F0ss", "ZetaOverlap", "U", "Beta", "CoreKO",
-						"GCore", "GCore", "GCore",
-					},
-					[]float64{
-						0.5309794405, 1.268641, -0.4133181015,
-						-0.3069665138, 0.9416560451, 0.0016794859,
-						0.8557539975, 3.3750716455,
-					},
-				},
-				{
-					"C",
-					[]string{"F0ss", "F0sp", "F0pp", "F2pp", "G1sp",
-						"ZetaOverlap", "ZetaOverlap", "U", "U",
-						"Beta", "Beta", "CoreKO", "GCore", "GCore",
-						"GCore",
-					},
-					[]float64{
-						0.490071306, 0.4236511293, 0.3644399818,
-						0.1978513158, 0.0790832954, 2.047558,
-						1.702841, -1.8775102017, -1.4676915546,
-						-0.5653970197, -0.2745883383, 1.0202596926,
-						0.003215496, 0.588117579, 2.5208171714,
-					},
-				},
-			},
-		},
-	}
-	for _, test := range tests {
-		got, _ := LoadParams(test.infile)
-		if !reflect.DeepEqual(got, test.want) {
-			t.Errorf("got %v, wanted %v\n", got, test.want)
+func compParams(a, b []Param, eps float64) bool {
+	for i := range a {
+		if a[i].Atom != b[i].Atom {
+			fmt.Printf("atom: %q vs %q\n", a[i], b[i])
+			return false
 		}
+		if a[i].Name != b[i].Name {
+			fmt.Printf("name: %q vs %q\n", a[i], b[i])
+			return false
+		}
+		if math.Abs(a[i].Value-b[i].Value) > eps {
+			fmt.Printf("value: %q vs %q\n", a[i], b[i])
+			return false
+		}
+	}
+	return true
+}
+
+func TestLoadParams(t *testing.T) {
+	rc := LoadConfig("testfiles/test.in")
+	got := rc.Params
+	want := []Param{
+		{"USS", "H", -11.246958000000},
+		{"ZS", "H", 1.268641000000},
+		{"BETAS", "H", -8.352984000000},
+		{"GSS", "H", 14.448686000000},
+		{"USS", "C", -51.089653000000},
+		{"UPP", "C", -39.937920000000},
+		{"ZS", "C", 2.047558000000},
+		{"ZP", "C", 1.702841000000},
+		{"BETAS", "C", -15.385236000000},
+		{"BETAP", "C", -7.471929000000},
+		{"GSS", "C", 13.335519000000},
+		{"GPP", "C", 10.778326000000},
+		{"GSP", "C", 11.528134000000},
+		{"GP2", "C", 9.486212000000},
+		{"HSP", "C", 0.717322000000},
+	}
+	if !compParams(got, want, 1e-12) {
+		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }

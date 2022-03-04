@@ -1,0 +1,8 @@
+export LD_LIBRARY_PATH=/opt/mopac/
+
+hostname
+date
+{{range $j := .Inputs -}}
+/opt/mopac/mopac {{.}}.mop
+{{end -}}
+date

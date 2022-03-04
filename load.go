@@ -2,13 +2,67 @@ package main
 
 import (
 	"bufio"
+	"io"
+	"log"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"gonum.org/v1/gonum/mat"
 )
+
+type RawConf struct {
+	Params     string
+	Atoms      string
+	GeomFile   string
+	EnergyFile string
+	MaxIt      int
+	Lambda     float64
+}
+
+func (rc RawConf) ToConfig() (conf Config) {
+	conf.Params = LoadParams(rc.Params)
+	conf.Atoms = strings.Fields(rc.Atoms)
+	conf.GeomFile = rc.GeomFile
+	conf.EnergyFile = rc.EnergyFile
+	conf.MaxIt = rc.MaxIt
+	conf.Lambda = rc.Lambda
+	return
+}
+
+type Config struct {
+	GeomFile   string
+	EnergyFile string
+	Params     []Param
+	Atoms      []string
+	MaxIt      int
+	Lambda     float64
+}
+
+func LoadConfig(filename string) Config {
+	f, err := os.Open(filename)
+	defer f.Close()
+	if err != nil {
+		panic(err)
+	}
+	cont, err := io.ReadAll(f)
+	if err != nil {
+		panic(err)
+	}
+	// Defaults
+	rc := RawConf{
+		GeomFile:   "file07",
+		EnergyFile: "rel.dat",
+		MaxIt:      250,
+		Lambda:     1e-8,
+	}
+	err = toml.Unmarshal(cont, &rc)
+	if err != nil {
+		panic(err)
+	}
+	return rc.ToConfig()
+}
 
 func LoadGeoms(filename string) (ret [][]float64) {
 	f, err := os.Open(filename)
@@ -59,65 +113,37 @@ func LoadEnergies(filename string) *mat.Dense {
 	return mat.NewDense(len(ret), 1, ret)
 }
 
-// LoadParams extracts semi-empirical parameters from a Gaussian
-// output file
-func LoadParams(filename string) (ret []Param, num int) {
-	f, err := os.Open(filename)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	scanner := bufio.NewScanner(f)
-	var (
-		line    string
-		fields  []string
-		first   bool
-		inparam bool
-		param   Param
+// LoadParams extracts semi-empirical parameters from an input parameter string.
+// The expected format is that of a MOPAC input file, not output file
+func LoadParams(params string) (ret []Param) {
+	scanner := bufio.NewScanner(
+		strings.NewReader(params),
 	)
-	blank := regexp.MustCompile(`^ *$`)
+	var (
+		line   string
+		fields []string
+	)
+	// TODO might need to deduplicate symmetrical terms like 1
+	// XFAC_6 vs 6 XFAC_1
 	for scanner.Scan() {
 		line = scanner.Text()
 		fields = strings.Fields(line)
 		switch {
-		case line == " ****":
-			inparam = true
-			first = true
-			if param.Atom != "" {
-				ret = append(ret, param)
+		case len(fields) != 3:
+			continue
+		default:
+			v, err := strconv.ParseFloat(fields[2], 64)
+			if err != nil {
+				log.Fatalf("failed to parse %q as float",
+					fields[2],
+				)
 			}
-			param = Param{}
-		case inparam && blank.MatchString(line):
-			inparam = false
-			return
-		case inparam && first:
-			param.Atom = fields[0]
-			first = false
-		case inparam:
-			for _, f := range fields {
-				split := strings.Split(f, "=")
-				if _, ok := DERIVED_PARAMS[split[0]]; ok {
-					continue
-				}
-				name := split[0]
-				vals := strings.Split(split[1], ",")
-				if name == "DCore" {
-					name += "=" + vals[0] + "," + vals[1]
-					vals = vals[2:]
-				}
-				for _, val := range vals {
-					v, err := strconv.ParseFloat(val, 64)
-					if err != nil {
-						panic(err)
-					}
-					// skip zero params for now
-					if v != 0.0 {
-						param.Names = append(param.Names, name)
-						param.Values = append(param.Values, v)
-						num++
-					}
-				}
-			}
+			ret = append(ret,
+				Param{
+					Name:  fields[0],
+					Atom:  fields[1],
+					Value: v,
+				})
 		}
 	}
 	return

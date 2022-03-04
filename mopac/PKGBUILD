@@ -1,0 +1,21 @@
+# Maintainer: Brent Westbrook <brent@bwestbro.com>
+pkgname=MOPAC
+pkgver=21.041L
+pkgrel=1
+pkgdesc="a semiempirical quantum chemistry software package"
+arch=('any')
+url="http://openmopac.net/home.html"
+license=('unknown')
+groups=()
+depends=()
+makedepends=()
+provides=('mopac')
+source=("http://openmopac.net/MOPAC2016_for_Linux_64_bit.zip")
+sha256sums=('16e82dc2db56d1505b3715d7cb8b3a00da55d461e9150c02eca8c8a39a56a638')
+
+package() {
+    mkdir -p "$pkgdir/opt/mopac"
+    cp 'MOPAC2016.exe' "$pkgdir/opt/mopac/mopac"
+    chmod 755 "$pkgdir/opt/mopac/mopac"
+    cp 'libiomp5.so' "$pkgdir/opt/mopac/."
+}

@@ -2,10 +2,15 @@
 #SBATCH --job-name=semp
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH -o {{.Name}}.out
+#SBATCH -o {{.Name}}.pbs.out
 #SBATCH --no-requeue
 #SBATCH --mem=1gb
 
-{{range .Inputs -}}
-/home/qc/bin/g16b01.sh {{.}}.com
+export LD_LIBRARY_PATH=/home/qc/mopac2016/
+
+hostname
+date
+{{range $j := .Inputs -}}
+/home/qc/mopac2016/MOPAC2016.exe {{.}}.mop
 {{end -}}
+date

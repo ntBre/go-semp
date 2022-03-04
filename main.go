@@ -1,8 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"errors"
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -25,22 +24,12 @@ const (
 	THRESH        = 1.0
 	NU            = 2.0
 	CHUNK         = 128
-	INFILE_SUFFIX = ".com"
+	INFILE_SUFFIX = ".mop"
+	GAMMA0        = math.Pi / 4
+	MAX_TRIES     = 5
 )
 
 var (
-	// set representing derived semi-empirical parameters
-	DERIVED_PARAMS = map[string]struct{}{
-		"PQN":      {},
-		"NValence": {},
-		"DDN":      {},
-		"KON":      {},
-		"EISol":    {},
-		"DCore":    {},
-		"EHeat":    {},
-		"DipHyp":   {},
-		"GCore":    {},
-	}
 	CHARGE = 0
 	SPIN   = 1
 	//  https://en.wikipedia.org/wiki/Numerical_differentiation
@@ -51,62 +40,26 @@ var (
 
 // Flags
 var (
-	atoms      = flag.String("atoms", "", "specify the atom labels")
-	geomFile   = flag.String("geoms", "file07", "file containing the list of geometries")
-	energyFile = flag.String("energies", "rel.dat", "file containing the list of training energies corresponding to -geoms")
-	paramFile  = flag.String("params", "opt.out", "file containing the initial semi-empirical parameters")
-	debug      = flag.Bool("debug", false, "toggle debugging information")
+	debug = flag.String("debug", "",
+		"toggle debugging information (params|jac)")
 	cpuprofile = flag.String("cpu", "", "write a CPU profile")
 	gauss      = flag.String("gauss", "g16", "command to run gaussian")
-	lambda     = flag.Float64("lambda", 1e-8, "initial lambda value for levmar")
-	maxit      = flag.Int("maxit", 250, "maximum iterations")
-	one        = flag.Bool("one", false, "write the initial SE energies and exit")
+	one        = flag.Bool("one", false,
+		"write the initial SE energies and exit")
+	version = flag.Bool("v", false, "print version number and exit")
 )
 
-// Errors
-var (
-	ErrEnergyNotFound = errors.New("Energy not found in Gaussian output")
-	ErrFileNotFound   = errors.New("Output file not found")
-)
-
-type Param struct {
-	Atom   string
-	Names  []string
-	Values []float64
-}
-
-type Params []Param
-
-func (p Params) Values() (ret []float64) {
-	for i := range p {
-		ret = append(ret, p[i].Values...)
-	}
-	return
-}
-
-// WriteParams formats params for use in a Gaussian input file and
+// WriteParams formats params for use in a MOPAC input file and
 // writes them to w
-func WriteParams(w io.Writer, params []Param) {
-	for _, param := range params {
-		fmt.Fprintf(w, " ****\n%2s", param.Atom)
-		var last, sep string
-		for i, name := range param.Names {
-			if strings.Contains(name, "DCore") {
-				sep = ","
-			} else {
-				sep = "="
-			}
-			if name == last {
-				fmt.Fprintf(w, ",%.10f", param.Values[i])
-			} else {
-				fmt.Fprintf(w, "\n%s%s%.10f",
-					name, sep, param.Values[i])
-				last = name
-			}
-		}
-		fmt.Fprint(w, "\n")
+func WriteParams(w io.Writer, params []Param) error {
+	nw := bufio.NewWriter(w)
+	for _, p := range params {
+		fmt.Fprintf(nw, "%-8s%8s%20.12f\n",
+			p.Name, p.Atom, p.Value,
+		)
 	}
-	fmt.Fprint(w, " ****\n\n")
+	fmt.Fprint(nw, "\n")
+	return nw.Flush()
 }
 
 func LogParams(w io.Writer, params []Param, iter int) {
@@ -114,43 +67,45 @@ func LogParams(w io.Writer, params []Param, iter int) {
 	WriteParams(w, params)
 }
 
-func DumpParams(params []Param, filename string) {
-	f, err := os.Create(filename)
-	defer f.Close()
+func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
+	f, err := os.CreateTemp("tmparam", "")
 	if err != nil {
 		panic(err)
 	}
-	WriteParams(f, params)
-}
-
-func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
 	geom := ZipGeom(names, coords)
-	t, err := template.New("com").Parse(`%mem=1000mb
-%nprocs=1
-#P PM6=(print,zero,input)
-
-the title
-
-{{.Charge}} {{.Spin}}
+	/*
+	   XYZ - Cartesian geometry
+	   A0 - use atomic units (bohr)
+	   precise - use higher precision
+	   relscf - tighten precision by an additional multiplicative factor
+	*/
+	t, err := template.New("com").Parse(
+		`XYZ A0 scfcrt=1.D-21 aux(precision=14) external={{.Name}} 1SCF charge={{.Charge}} PM6
+blank line
+blank line
 {{.Geom}}
-{{.Params}}
 
 `)
 	if err != nil {
 		panic(err)
 	}
-	var b bytes.Buffer
-	WriteParams(&b, params)
+	WriteParams(f, params)
+	err = f.Close()
+	if err != nil {
+		panic(err)
+	}
+	abs, err := filepath.Abs(f.Name())
+	if err != nil {
+		panic(err)
+	}
 	t.Execute(w, struct {
 		Geom   string
-		Params string
+		Name   string
 		Charge int
-		Spin   int
 	}{
 		Charge: CHARGE,
-		Spin:   SPIN,
 		Geom:   geom,
-		Params: b.String(),
+		Name:   abs,
 	})
 }
 
@@ -167,7 +122,8 @@ const (
 
 // SEnergy returns the list of jobs needed to compute the desired
 // semi-empirical energies after writing the Gaussian input files
-func SEnergy(names []string, geoms [][]float64, params []Param, col int, calc Type) []Job {
+func SEnergy(names []string, geoms [][]float64, params []Param, col int,
+	calc Type) []Job {
 	jobs := make([]Job, len(geoms))
 	for i, geom := range geoms {
 		name := fmt.Sprintf("inp/job.%010d", counter)
@@ -208,15 +164,16 @@ type Job struct {
 
 // CentralDiff returns a list of Jobs needed to compute the ith column
 // of the numerical Jacobian
-func CentralDiff(names []string, geoms [][]float64, params []Param, p, i, col int) []Job {
-	params[p].Values[i] += DELTA
+func CentralDiff(names []string, geoms [][]float64, params []Param,
+	i, col int) []Job {
+	params[i].Value += DELTA
 	fwdJobs := SEnergy(names, geoms, params, col, Fwd)
 
-	params[p].Values[i] -= 2 * DELTA
+	params[i].Value -= 2 * DELTA
 	bwdJobs := SEnergy(names, geoms, params, col, Bwd)
 
 	// have to restore the value
-	params[p].Values[i] += DELTA
+	params[i].Value += DELTA
 
 	return append(fwdJobs, bwdJobs...)
 }
@@ -224,28 +181,31 @@ func CentralDiff(names []string, geoms [][]float64, params []Param, p, i, col in
 // NumJac computes the numerical Jacobian of energies vs params
 func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 	rows := len(geoms)
-	cols := Len(params)
+	cols := len(params)
 	jac := mat.NewDense(rows, cols, nil)
 	var col int
 	// Set up all the Jobs for the Jacobian
 	jobs := make([]Job, 0)
-	for p := range params {
-		for i := range params[p].Values {
-			if *debug {
-				fmt.Printf("before:%12.9f\n", Params(params).Values())
-			}
-			jobs = append(jobs,
-				CentralDiff(names, geoms, params, p, i, col)...)
-			if *debug {
-				fmt.Printf(" after:%12.9f\n", Params(params).Values())
-			}
-			col++
+	for i := range params {
+		if *debug == "params" {
+			fmt.Printf("before:%12.9f\n",
+				Values(params))
 		}
+		jobs = append(jobs,
+			CentralDiff(names, geoms, params, i, col)...)
+		if *debug == "params" {
+			fmt.Printf(" after:%12.9f\n",
+				Values(params))
+		}
+		col++
 	}
 	RunJobs(jobs, jac)
 	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 	// 	params[p].Names[i], params[p].Atom)
 	cleanup()
+	if *debug == "jac" {
+		DumpMat(jac)
+	}
 	return jac
 }
 
@@ -254,60 +214,94 @@ func cleanup() {
 	if err := os.RemoveAll("inp"); err != nil {
 		panic(err)
 	}
+	if err := os.RemoveAll("tmparam"); err != nil {
+		panic(err)
+	}
 	if err := os.Mkdir("inp", 0744); err != nil {
+		panic(err)
+	}
+	if err := os.Mkdir("tmparam", 0744); err != nil {
 		panic(err)
 	}
 }
 
 func UpdateParams(params []Param, v *mat.Dense, scale float64) []Param {
 	ret := make([]Param, 0, len(params))
-	var i int
-	for _, p := range params {
-		vals := make([]float64, 0, len(p.Values))
-		for _, val := range p.Values {
-			vals = append(vals, val+v.At(i, 0)*scale)
-			i++
-		}
+	for i, p := range params {
 		ret = append(ret, Param{
-			Atom:   p.Atom,
-			Names:  p.Names,
-			Values: vals,
+			Atom:  p.Atom,
+			Name:  p.Name,
+			Value: p.Value + v.At(i, 0)*scale,
 		})
 	}
 	return ret
 }
 
-func LevMar(jac, ai, se *mat.Dense, params []Param, scale float64) []Param {
+func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
+	newParams []Param, gamma float64) {
 	// LHS
-	var prod mat.Dense
-	prod.Mul(jac.T(), jac)
-	r, _ := prod.Dims()
+	var a mat.Dense
+	a.Mul(jac.T(), jac)
+	// construct A* as a_rc = a_rc / [ sqrt(a_rr) * sqrt(a_cc) ], where a is
+	// jacTjac
+	r, c := a.Dims()
+	Astar := mat.NewDense(r, c, nil)
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			Astar.Set(i, j,
+				a.At(i, j)/
+					(math.Sqrt(a.At(i, i))*
+						math.Sqrt(a.At(j, j))))
+		}
+	}
 	eye := Identity(r)
 	var Leye mat.Dense
-	Leye.Scale(*lambda, eye)
-	var sum mat.Dense
-	sum.Add(&prod, &Leye)
+	Leye.Scale(lambda, eye)
+	var lhs mat.Dense
+	lhs.Add(Astar, &Leye)
 	// RHS
 	var diff mat.Dense
 	diff.Sub(ai, se)
-	var prod2 mat.Dense
-	prod2.Mul(jac.T(), &diff)
-	var step mat.Dense
-	err := step.Solve(&sum, &prod2)
-	if err != nil {
-		fmt.Println("jacT")
-		DumpMat(jac.T())
-		fmt.Println("prod")
-		DumpMat(&prod)
-		fmt.Println("diff")
-		DumpVec(&diff)
-		fmt.Println("prod2")
-		DumpMat(&prod2)
-		fmt.Println("step")
-		DumpVec(&step)
-		panic(err)
+	var g mat.Dense
+	g.Mul(jac.T(), &diff)
+	r, _ = g.Dims()
+	// rhs = g*
+	rhs := mat.NewDense(r, 1, nil)
+	for i := 0; i < r; i++ {
+		rhs.Set(i, 0, g.At(i, 0)/math.Sqrt(a.At(i, i)))
 	}
-	return UpdateParams(params, &step, scale)
+	// d = δ
+	var d mat.Dense
+	err := d.Solve(&lhs, rhs)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "jac")
+		DumpMat(jac)
+		fmt.Fprintln(os.Stderr, "prod")
+		DumpMat(&a)
+		fmt.Fprintln(os.Stderr, "diff")
+		DumpVec(&diff)
+		fmt.Fprintln(os.Stderr, "prod2")
+		DumpMat(&g)
+		fmt.Fprintln(os.Stderr, "step")
+		DumpVec(&d)
+		if strings.Contains(err.Error(), "Inf") {
+			panic(err)
+		}
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+	// step is d* here, convert back to d with eqn 30
+	r, _ = d.Dims()
+	for i := 0; i < r; i++ {
+		d.Set(i, 0, d.At(i, 0)/math.Sqrt(a.At(i, i)))
+	}
+	// gamma = acos( [delta(transpose) * g] / [mag(delta) * mag(g)] )
+	gam := mat.NewDense(1, 1, nil)
+	gam.Mul(d.T(), &g)
+	magD := mat.Norm(&d, 2)
+	magG := mat.Norm(&g, 2)
+	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
+	newParams = UpdateParams(params, &d, scale)
+	return
 }
 
 func Filenames(jobs []Job) []string {
@@ -320,11 +314,6 @@ func Filenames(jobs []Job) []string {
 
 // RunJobs runs jobs and stores the results in target
 func RunJobs(jobs []Job, target *mat.Dense) {
-	var check *mat.Dense
-	if *debug {
-		r, c := target.Dims()
-		check = mat.NewDense(r, c, nil)
-	}
 	var pbs int
 	chunkees := make([]Job, 0, CHUNK)
 	runJobs := make([]Job, 0, len(jobs))
@@ -358,14 +347,11 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 	for len(runJobs) > 0 {
 		for i := 0; i < len(runJobs); i++ {
 			job := runJobs[i]
-			energy, err := ParseGaussian(
+			energy, err := ReadOut(
 				filepath.Join("inp", job.Filename+".out"),
 			)
 			if err == nil {
 				shortened++
-				if *debug {
-					check.Set(job.I, job.J, check.At(job.I, job.J)+1)
-				}
 				target.Set(job.I, job.J,
 					target.At(job.I, job.J)+
 						job.Coeff*energy)
@@ -376,6 +362,10 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				// delete the old job, resubmit, and
 				// default qstat to true
 				delete(qstat, job.Jobid)
+				log.Printf("resubmitting %s as %s for %v\n",
+					job.Filename, job.Filename+"_redo",
+					err,
+				)
 				runJobs[i] = Resubmit(job)
 				qstat[runJobs[i].Jobid] = true
 			}
@@ -383,82 +373,59 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 		if shortened < 1 {
 			// check the queue if no runJobs finish
 			Stat(&qstat)
+			time.Sleep(1 * time.Second)
+			fmt.Fprintf(os.Stderr,
+				"%d jobs remaining\n", len(runJobs))
 		}
-		time.Sleep(1 * time.Second)
-		fmt.Fprintf(os.Stderr, "%d jobs remaining\n", len(runJobs))
 		shortened = 0
 	}
-	if *debug {
-		DumpMat(check)
-	}
+	fmt.Fprintln(os.Stderr, "jobs done")
 }
 
-func Resubmit(job Job) Job {
-	src, err := os.Open(filepath.Join("inp", job.Filename+INFILE_SUFFIX))
-	defer src.Close()
-	if err != nil {
-		panic(err)
-	}
-	inp := filepath.Join("inp", job.Filename+"_redo"+INFILE_SUFFIX)
-	dst, err := os.Create(inp)
-	if err != nil {
-		panic(err)
-	}
-	defer dst.Close()
-	io.Copy(dst, src)
-	pbs := filepath.Join("inp", job.Filename+"_redo.pbs")
-	f, err := os.Create(pbs)
-	defer f.Close()
-	if err != nil {
-		panic(err)
-	}
-	WritePBS(f, job.Filename, []string{job.Filename + "_redo"})
-	fmt.Fprintf(os.Stderr, "resubmitting %s as %s\n",
-		job.Filename, job.Filename+"_redo")
-	return Job{
-		Filename: job.Filename + "_redo",
-		I:        job.I,
-		J:        job.J,
-		Jobid:    Submit(pbs),
-		Coeff:    job.Coeff,
-	}
-}
-
-func main() {
-	host, _ := os.Hostname()
-	flag.Parse()
-	if *atoms == "" {
-		log.Fatalln("-atoms flag is required, aborting")
-	}
-	args := flag.Args()
-	infile := "semp"
-	if len(args) >= 1 {
-		infile = args[0]
-	}
-	DupOutErr(infile)
-	fmt.Printf("running on host: %s\n", host)
-	fmt.Printf("initial lambda: %.14f\n", *lambda)
-	if *debug {
-		os.Mkdir("debug", 0744)
-	}
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			panic(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
-	labels := strings.Fields(*atoms)
-	geoms := LoadGeoms(*geomFile)
+func setup() {
+	os.RemoveAll("tmparam")
+	os.MkdirAll("tmparam", 0744)
 	os.RemoveAll("inp")
-	os.Mkdir("inp", 0755)
-	paramLog, _ := os.Create("params.log")
-	ai := LoadEnergies(*energyFile)
-	params, num := LoadParams(*paramFile)
-	fmt.Printf("loaded %d params\n", num)
+	os.Mkdir("inp", 0744)
+}
+
+func takedown() {
+	os.RemoveAll("tmparam")
+}
+
+func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
+	params []Param, step, lambda float64) (newParams []Param,
+	newSe *mat.Dense, norm, max, gamma float64) {
+	newParams, gamma = LevMar(jac, ai, se, params, step, lambda)
+	jobs := SEnergy(atoms, geoms, newParams, 0, None)
 	nrg := mat.NewDense(len(geoms), 1, nil)
-	jobs := SEnergy(labels, geoms, params, 0, None)
+	RunJobs(jobs, nrg)
+	newSe = Relative(nrg)
+	norm, max = Norm(ai, newSe)
+	return
+}
+
+func printHeader() {
+	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
+		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
+	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
+		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
+}
+func printStep(iter int, norm, lastNorm, rmsd, lastRMSD, max, time float64) {
+	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
+		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, time)
+}
+
+func work(infile string) (norms []float64) {
+	conf := LoadConfig(infile)
+	geoms := LoadGeoms(conf.GeomFile)
+	paramLog, _ := os.Create("params.log")
+	ai := LoadEnergies(conf.EnergyFile)
+	params := conf.Params
+	lambda := conf.Lambda
+	fmt.Printf("loaded %d params\n", len(params))
+	nrg := mat.NewDense(len(geoms), 1, nil)
+	jobs := SEnergy(conf.Atoms, geoms, params, 0, None)
 	RunJobs(jobs, nrg)
 	if *one {
 		DumpVec(nrg)
@@ -468,80 +435,113 @@ func main() {
 	norm, max := Norm(ai, se)
 	rmsd := RMSD(ai, se) * htToCm
 	var (
-		iter     int
 		lastNorm float64
 		lastRMSD float64
 	)
-	fmt.Printf("%17s%12s%12s%12s%12s%12s\n",
-		"cm-1", "cm-1", "cm-1", "cm-1", "cm-1", "s")
-	fmt.Printf("%5s%12s%12s%12s%12s%12s%12s\n",
-		"Iter", "Norm", "ΔNorm", "RMSD", "ΔRMSD", "Max", "Time")
-	fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-		iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max, 0.0)
-	LogParams(paramLog, params, iter)
-	iter++
+	printHeader()
+	printStep(0, norm, lastNorm, rmsd, lastRMSD, max, 0.0)
+	LogParams(paramLog, params, 0)
 	lastNorm = norm
 	lastRMSD = rmsd
 	start := time.Now()
-	for iter <= *maxit && norm > THRESH {
-		jac := NumJac(labels, geoms, params)
-		*lambda /= NU
-		// BEGIN copy-paste
-		newParams := LevMar(jac, ai, se, params, 1.0)
-		jobs = SEnergy(labels, geoms, newParams, 0, None)
-		nrg.Zero()
-		RunJobs(jobs, nrg)
-		se = Relative(nrg)
-		norm, max = Norm(ai, se)
-		rmsd = RMSD(ai, se) * htToCm
-		// END copy-paste
+	norms = []float64{norm}
+	var (
+		newParams []Param
+		newSe     *mat.Dense
+		gamma     float64
+		delNorm   float64 = 1
+	)
+	for iter := 1; iter <= conf.MaxIt && norm > THRESH &&
+		math.Abs(delNorm) > 1e-4; iter++ {
+		jac := NumJac(conf.Atoms, geoms, params)
+		lambda /= NU
+		newParams, newSe, norm, max, gamma = inner(
+			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
+		)
 
 		// case ii. and iii. of levmar, first case is ii. from
 		// Marquardt63
-		var bad bool
+		var (
+			bad       bool
+			lastGamma float64
+		)
 		for i := 0; norm > lastNorm; i++ {
-			*lambda *= NU
-			newParams := LevMar(jac, ai, se, params, 1.0)
-			jobs = SEnergy(labels, geoms, newParams, 0, None)
-			nrg.Zero()
-			RunJobs(jobs, nrg)
-			se = Relative(nrg)
-			norm, max = Norm(ai, se)
-			rmsd = RMSD(ai, se) * htToCm
+			lambda *= NU
+			dNorm := norm - lastNorm
+			newParams, newSe, norm, max, gamma = inner(
+				conf.Atoms, geoms, jac, ai,
+				se, params, 1.0, lambda,
+			)
 			fmt.Fprintf(os.Stderr,
-				"\tλ_%d to %g\n", i, *lambda)
-			// give up after 5 increases
-			if i > 4 {
-				// case iii. failed, try footnote
+				"\tλ_%d to %g with ΔNorm = %f\n",
+				i, lambda, norm-lastNorm,
+			)
+			switch {
+			case i > 0 && gamma-lastGamma > 1e-6:
+				log.Println("breaking gamma")
 				bad = true
-				*lambda *= math.Pow(NU, float64(-(i + 1)))
+			case norm-lastNorm > dNorm:
+				log.Println("breaking norm")
+				bad = true
+			case i > MAX_TRIES:
+				log.Println("breaking i")
+				bad = true
+			}
+			if bad {
 				break
 			}
 		}
-		var prev float64
-		// just break if decreasing k doesnt change the norm
-		for i := 2; bad && norm > lastNorm && norm-prev > 1e-6; i++ {
-			k := 1.0 / float64(int(1)<<i)
-			newParams := LevMar(jac, ai, se, params, k)
-			DumpParams(newParams, "inp/params.dat")
-			jobs = SEnergy(labels, geoms, newParams, 0, None)
-			nrg.Zero()
-			RunJobs(jobs, nrg)
-			se = Relative(nrg)
-			norm, max = Norm(ai, se)
-			rmsd = RMSD(ai, se) * htToCm
-			fmt.Fprintf(os.Stderr, "\tk_%d to %g with Δ = %f\n",
+		var k float64 = 1
+		for i := 2; bad && norm > lastNorm && k > 1e-14; i++ {
+			k = 1.0 / math.Pow(10, float64(i))
+			newParams, newSe, norm, max, gamma = inner(
+				conf.Atoms, geoms, jac, ai,
+				se, params, k, lambda,
+			)
+			fmt.Fprintf(os.Stderr,
+				"\tk_%d to %g with ΔNorm = %f\n",
 				i, k, norm-lastNorm)
-			prev = norm
 		}
-		fmt.Printf("%5d%12.4f%12.4f%12.4f%12.4f%12.4f%12.1f\n",
-			iter, norm, norm-lastNorm, rmsd, rmsd-lastRMSD, max,
+		rmsd = RMSD(ai, newSe) * htToCm
+		printStep(iter, norm, lastNorm, rmsd, lastRMSD, max,
 			float64(time.Since(start))/1e9)
+		norms = append(norms, norm)
 		start = time.Now()
+		delNorm = norm - lastNorm
 		lastNorm = norm
 		lastRMSD = rmsd
 		params = newParams
+		se = newSe
 		LogParams(paramLog, params, iter)
-		iter++
 	}
+	return
+}
+
+func main() {
+	host, _ := os.Hostname()
+	flag.Parse()
+	if *version {
+		fmt.Printf("semp version %s\n", VERSION)
+		os.Exit(0)
+	}
+	args := flag.Args()
+	infile := "semp"
+	if len(args) >= 1 {
+		infile = args[0]
+	}
+	DupOutErr(infile)
+	fmt.Printf("semp version %s\n", VERSION)
+	fmt.Printf("running on host: %s\n", host)
+	setup()
+	defer takedown()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	iters := work("semp.in")
+	fmt.Printf("Convergence reached after %d iterations\n", len(iters))
 }

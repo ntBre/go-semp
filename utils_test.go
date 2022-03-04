@@ -16,11 +16,11 @@ func TestZipGeom(t *testing.T) {
 			0.000000000, 1.595272034, 0.906954891,
 			0.000000000, -1.595272034, 0.906954891,
 		})
-	want := `C      0.000000000000      0.000000000000     -0.470300448525
-C      0.000000000000      0.350716892445      0.194874594896
-C      0.000000000000     -0.350716892445      0.194874594896
-H      0.000000000000      0.844181605584      0.479939859634
-H      0.000000000000     -0.844181605584      0.479939859634
+	want := `C      0.000000000000      0.000000000000     -0.888739044000
+C      0.000000000000      0.662758874000      0.368259613000
+C      0.000000000000     -0.662758874000      0.368259613000
+H      0.000000000000      1.595272034000      0.906954891000
+H      0.000000000000     -1.595272034000      0.906954891000
 `
 	if got != want {
 		t.Errorf("got\n%v, wanted\n%v\n", got, want)
@@ -34,18 +34,6 @@ func TestSub(t *testing.T) {
 	)
 	want := []float64{-3, -6, -13}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, wanted %v\n", got, want)
-	}
-}
-
-func TestLen(t *testing.T) {
-	p, _ := LoadParams("testfiles/opt.out")
-	got := Len(p)
-	want := 23
-	if _, ok := DERIVED_PARAMS["GCore"]; ok {
-		want = 17
-	}
-	if got != want {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
@@ -90,6 +78,14 @@ func TestIdentity(t *testing.T) {
 		0, 0, 1,
 	})
 	if !reflect.DeepEqual(got.RawMatrix().Data, want.RawMatrix().Data) {
+		t.Errorf("got %v, wanted %v\n", got, want)
+	}
+}
+
+func TestTrimExt(t *testing.T) {
+	got := TrimExt("test.in")
+	want := "test"
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, wanted %v\n", got, want)
 	}
 }
