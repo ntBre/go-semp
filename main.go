@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -48,12 +47,6 @@ var (
 	one        = flag.Bool("one", false,
 		"write the initial SE energies and exit")
 	version = flag.Bool("v", false, "print version number and exit")
-)
-
-// Errors
-var (
-	ErrEnergyNotFound = errors.New("Energy not found in Gaussian output")
-	ErrFileNotFound   = errors.New("Output file not found")
 )
 
 // WriteParams formats params for use in a MOPAC input file and
@@ -369,6 +362,10 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				// delete the old job, resubmit, and
 				// default qstat to true
 				delete(qstat, job.Jobid)
+				log.Printf("resubmitting %s as %s for %v\n",
+					job.Filename, job.Filename+"_redo",
+					err,
+				)
 				runJobs[i] = Resubmit(job)
 				qstat[runJobs[i].Jobid] = true
 			}

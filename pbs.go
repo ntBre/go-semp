@@ -76,8 +76,6 @@ func Resubmit(job Job) Job {
 		panic(err)
 	}
 	WritePBS(f, job.Filename, []string{job.Filename + "_redo"})
-	fmt.Fprintf(os.Stderr, "resubmitting %s as %s\n",
-		job.Filename, job.Filename+"_redo")
 	return Job{
 		Filename: job.Filename + "_redo",
 		I:        job.I,

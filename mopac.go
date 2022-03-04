@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -10,6 +11,13 @@ import (
 
 const (
 	KCALHT = 627.5091809 // kcal/mol per hartree
+)
+
+var (
+	ErrFileContainsError = errors.New("file contains error")
+	ErrEnergyNotFound    = errors.New("Energy not found in output")
+	ErrFileNotFound      = errors.New("Output file not found")
+	ErrBlankOutput       = errors.New("blank output")
 )
 
 func ReadOut(filename string) (energy float64, err error) {
@@ -25,21 +33,28 @@ func ReadOut(filename string) (energy float64, err error) {
 		line   string
 		fields []string
 		i      int
+		upper  string
 	)
 	for i = 0; scanner.Scan(); i++ {
 		line = scanner.Text()
+		upper = strings.ToUpper(line)
 		switch {
-		case i == 0 && strings.Contains(strings.ToUpper(line), "PANIC"):
+		case i == 0 && strings.Contains(upper, "PANIC"):
 			panic("panic requested in output file")
-		case strings.Contains(strings.ToUpper(line), "ERROR"):
-			err = errors.New("file contains error")
+		// requested error
+		case i == 0 && strings.Contains(upper, "ERROR"):
+			err = ErrFileContainsError
 			return
+		case strings.Contains(upper, "ERROR"):
+			log.Fatalf("file %q contains an error: %q\n",
+				filename, line,
+			)
 		case strings.Contains(line, "== MOPAC DONE =="):
 			break
 		}
 	}
 	if i == 0 {
-		err = errors.New("blank output")
+		err = ErrBlankOutput
 		return
 	}
 	// should I close old f first? what about deferring double
