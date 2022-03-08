@@ -478,6 +478,7 @@ func work(infile string) (norms []float64) {
 	for iter := 1; iter <= conf.MaxIt && norm > THRESH &&
 		math.Abs(delNorm) > 1e-4; iter++ {
 		if conf.Broyden && iter > 1 && iter%conf.BroydInt != 0 {
+			log.Printf("broyden on iter %d\n", iter)
 			jac = Broyden(jac, step, oldSe, newSe)
 		} else {
 			jac = NumJac(conf.Atoms, geoms, params)
