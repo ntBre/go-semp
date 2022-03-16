@@ -21,7 +21,7 @@ files :
 deploy: semp
 	scp -C semp $(DEST)
 
-eland: semp scripts/convert.py
+eland: semp scripts/convert.py scripts/dump2inp.py
 	scp -C $? 'eland:programs/semp/.'
 	date >> eland
 

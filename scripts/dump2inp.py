@@ -1,12 +1,13 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import io
 from sys import argv
 
 # convert an anpass-style dump file from `pbqff` to rel.dat and file07 expected
-# by `semp`
+# by `semp`. This includes converting the coordinates from angstroms to bohr
 
 START_GEOM = "# GEOMUP #################"
+ANGBOHR = 0.529177249  # angstrom per bohr
 
 
 def format_geom(geom):
@@ -15,7 +16,7 @@ def format_geom(geom):
     ret.write(START_GEOM + "\n")
     for i in range(0, len(geom), 3):
         for j in range(i, i + 3):
-            ret.write("%20.10f" % float(geom[j]))
+            ret.write("%20.10f" % (float(geom[j]) / ANGBOHR))
         ret.write("\n")
     return ret.getvalue()
 
