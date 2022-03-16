@@ -48,7 +48,9 @@ func Submit(filename string) string {
 	cmd.Dir = dir
 	byts, err := cmd.Output()
 	if err != nil {
-		fmt.Println("the error is : ", cmd.String())
+		fmt.Printf("error on %q is: %v",
+			cmd.String(), err,
+		)
 		panic(err)
 	}
 	// output like "Submitted batch job 49229449"
