@@ -35,21 +35,26 @@ type RawConf struct {
 	// The interval at which to compute a full numerical Jacobian if Broyden
 	// is used, defaults to 5
 	BroydInt int
-	// The number of jobs to group into a single PBS file
+	// The number of jobs to group into a single PBS file, defaults to 128
 	ChunkSize int
+	// The maximum number of jobs to have written and submitted at one time,
+	// defaults to -1 (no limit)
+	JobLimit int
 }
 
-func (rc RawConf) ToConfig() (conf Config) {
-	conf.Params = LoadParams(rc.Params)
-	conf.Atoms = strings.Fields(rc.Atoms)
-	conf.GeomFile = rc.GeomFile
-	conf.EnergyFile = rc.EnergyFile
-	conf.MaxIt = rc.MaxIt
-	conf.Lambda = rc.Lambda
-	conf.Broyden = rc.Broyden
-	conf.BroydInt = rc.BroydInt
-	conf.ChunkSize = rc.ChunkSize
-	return
+func (rc RawConf) ToConfig() Config {
+	return Config{
+		Params:     LoadParams(rc.Params),
+		Atoms:      strings.Fields(rc.Atoms),
+		GeomFile:   rc.GeomFile,
+		EnergyFile: rc.EnergyFile,
+		MaxIt:      rc.MaxIt,
+		Lambda:     rc.Lambda,
+		Broyden:    rc.Broyden,
+		BroydInt:   rc.BroydInt,
+		ChunkSize:  rc.ChunkSize,
+		JobLimit:   rc.JobLimit,
+	}
 }
 
 type Config struct {
@@ -62,6 +67,7 @@ type Config struct {
 	Broyden    bool
 	BroydInt   int
 	ChunkSize  int
+	JobLimit   int
 }
 
 func LoadConfig(filename string) Config {
@@ -82,6 +88,8 @@ func LoadConfig(filename string) Config {
 		Lambda:     1e-8,
 		Broyden:    false,
 		BroydInt:   5,
+		ChunkSize:  128,
+		JobLimit:   -1,
 	}
 	err = toml.Unmarshal(cont, &rc)
 	if err != nil {
