@@ -157,6 +157,7 @@ type Job struct {
 	Filename  string
 	Jobid     string
 	ParamFile string
+	PBSFile   string
 	I         int
 	J         int
 	Coeff     float64
@@ -373,6 +374,7 @@ func (d *Dump) Add(files ...string) {
 
 // RunJobs runs jobs and stores the results in target
 func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
+	pbsfiles := make(map[string]int)
 	var pbs int
 	chunkees := make([]Job, 0, chunk)
 	runJobs := make([]Job, 0, len(jobs))
@@ -395,7 +397,9 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 			jobid := Submit(name)
 			for c := range chunkees {
 				chunkees[c].Jobid = jobid
+				chunkees[c].PBSFile = name
 			}
+			pbsfiles[name] = chunk
 			runJobs = append(runJobs, chunkees...)
 			chunkees = make([]Job, 0, chunk)
 		}
@@ -420,6 +424,13 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 				l := len(runJobs) - 1
 				runJobs[l], runJobs[i] = runJobs[i], runJobs[l]
 				runJobs = runJobs[:l]
+				pbsfiles[job.PBSFile]--
+				if pbsfiles[job.PBSFile] == 0 {
+					heap.Add(
+						job.PBSFile,
+						job.PBSFile+".out",
+					)
+				}
 				heap.Add(
 					filepath.Join("inp", job.Filename+".mop"),
 					filepath.Join("inp", job.Filename+".out"),
@@ -445,8 +456,6 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 			time.Sleep(1 * time.Second)
 			fmt.Fprintf(os.Stderr,
 				"%d jobs remaining\n", len(runJobs))
-		} else {
-			log.Printf("finished %d\n", shortened)
 		}
 		shortened = 0
 	}
