@@ -23,7 +23,6 @@ const (
 	EPS           = 1e-14
 	THRESH        = 1.0
 	NU            = 2.0
-	CHUNK         = 128
 	INFILE_SUFFIX = ".mop"
 	GAMMA0        = math.Pi / 4
 	MAX_TRIES     = 5
@@ -176,7 +175,8 @@ func CentralDiff(names []string, geoms [][]float64, params []Param,
 }
 
 // NumJac computes the numerical Jacobian of energies vs params
-func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
+func NumJac(names []string, geoms [][]float64, params []Param,
+	chunk int) *mat.Dense {
 	rows := len(geoms)
 	cols := len(params)
 	jac := mat.NewDense(rows, cols, nil)
@@ -196,7 +196,7 @@ func NumJac(names []string, geoms [][]float64, params []Param) *mat.Dense {
 		}
 		col++
 	}
-	RunJobs(jobs, jac)
+	RunJobs(jobs, jac, chunk)
 	// fmt.Fprintf(LOGFILE, "finished col %5d -> %s of %s\n", col,
 	// 	params[p].Names[i], params[p].Atom)
 	cleanup()
@@ -368,16 +368,18 @@ func (d *Dump) Add(files ...string) {
 }
 
 // RunJobs runs jobs and stores the results in target
-func RunJobs(jobs []Job, target *mat.Dense) {
+func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 	var pbs int
-	chunkees := make([]Job, 0, CHUNK)
+	chunkees := make([]Job, 0, chunk)
 	runJobs := make([]Job, 0, len(jobs))
-	heap := NewDump(CHUNK)
-	// submit the jobs in groups of size CHUNK, then store the
-	// updated jobs in runJobs
+	heap := NewDump(chunk)
+	// submit the jobs in groups of size chunk, then store the updated jobs
+	// in runJobs
+
+	// TODO implement joblimit
 	for j, job := range jobs {
 		chunkees = append(chunkees, job)
-		if (j > 0 && j%CHUNK == 0) || j == len(jobs)-1 {
+		if (j > 0 && j%chunk == 0) || j == len(jobs)-1 {
 			name := fmt.Sprintf("inp/%d.pbs", pbs)
 			pbs++
 			f, err := os.Create(name)
@@ -391,7 +393,7 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				chunkees[c].Jobid = jobid
 			}
 			runJobs = append(runJobs, chunkees...)
-			chunkees = make([]Job, 0, CHUNK)
+			chunkees = make([]Job, 0, chunk)
 		}
 	}
 	qstat := make(map[string]bool)
@@ -456,12 +458,12 @@ func takedown() {
 }
 
 func inner(atoms []string, geoms [][]float64, jac, ai, se *mat.Dense,
-	params []Param, scale, lambda float64) (newParams []Param,
+	params []Param, scale, lambda float64, chunk int) (newParams []Param,
 	newSe, step *mat.Dense, norm, max, gamma float64) {
 	newParams, gamma, step = LevMar(jac, ai, se, params, scale, lambda)
 	jobs := SEnergy(atoms, geoms, newParams, 0, None)
 	nrg := mat.NewDense(len(geoms), 1, nil)
-	RunJobs(jobs, nrg)
+	RunJobs(jobs, nrg, chunk)
 	newSe = Relative(nrg)
 	norm, max = Norm(ai, newSe)
 	return
@@ -488,7 +490,7 @@ func work(infile string) (norms []float64) {
 	fmt.Printf("loaded %d params\n", len(params))
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(conf.Atoms, geoms, params, 0, None)
-	RunJobs(jobs, nrg)
+	RunJobs(jobs, nrg, conf.ChunkSize)
 	if *one {
 		DumpVec(nrg)
 		os.Exit(0)
@@ -522,11 +524,12 @@ func work(infile string) (norms []float64) {
 			log.Printf("broyden on iter %d\n", iter)
 			jac = Broyden(jac, step, oldSe, newSe)
 		} else {
-			jac = NumJac(conf.Atoms, geoms, params)
+			jac = NumJac(conf.Atoms, geoms, params, conf.ChunkSize)
 		}
 		lambda /= NU
 		newParams, newSe, step, norm, max, gamma = inner(
 			conf.Atoms, geoms, jac, ai, se, params, 1.0, lambda,
+			conf.ChunkSize,
 		)
 
 		// case ii. and iii. of levmar, first case is ii. from
@@ -541,6 +544,7 @@ func work(infile string) (norms []float64) {
 			newParams, newSe, step, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, 1.0, lambda,
+				conf.ChunkSize,
 			)
 			fmt.Fprintf(os.Stderr,
 				"\tλ_%d to %g with ΔNorm = %f\n",
@@ -567,6 +571,7 @@ func work(infile string) (norms []float64) {
 			newParams, newSe, step, norm, max, gamma = inner(
 				conf.Atoms, geoms, jac, ai,
 				se, params, k, lambda,
+				conf.ChunkSize,
 			)
 			fmt.Fprintf(os.Stderr,
 				"\tk_%d to %g with ΔNorm = %f\n",

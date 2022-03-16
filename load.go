@@ -35,6 +35,8 @@ type RawConf struct {
 	// The interval at which to compute a full numerical Jacobian if Broyden
 	// is used, defaults to 5
 	BroydInt int
+	// The number of jobs to group into a single PBS file
+	ChunkSize int
 }
 
 func (rc RawConf) ToConfig() (conf Config) {
@@ -46,6 +48,7 @@ func (rc RawConf) ToConfig() (conf Config) {
 	conf.Lambda = rc.Lambda
 	conf.Broyden = rc.Broyden
 	conf.BroydInt = rc.BroydInt
+	conf.ChunkSize = rc.ChunkSize
 	return
 }
 
@@ -58,6 +61,7 @@ type Config struct {
 	Lambda     float64
 	Broyden    bool
 	BroydInt   int
+	ChunkSize  int
 }
 
 func LoadConfig(filename string) Config {
