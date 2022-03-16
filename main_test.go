@@ -65,7 +65,7 @@ func TestEnergies(t *testing.T) {
 		PBS_TEMPLATE = tmp
 		SUBMIT_CMD = cmd
 	}()
-	RunJobs(jobs, got)
+	RunJobs(jobs, got, 128)
 	if norm, fail := vecNorm(got, gauss, 7e-3); fail {
 		t.Errorf("gaussian mismatch with norm %.8e\n", norm)
 		vecDiff(got, gauss)
@@ -156,6 +156,7 @@ func TestNumJac(t *testing.T) {
 		[]string{"C", "C", "C", "H", "H"},
 		LoadGeoms("testfiles/three07"),
 		LoadConfig("testfiles/test.in").Params,
+		128,
 	)
 	want := mat.NewDense(3, 15, []float64{
 		-0.01497188, 0.20599558, 0.04540870,
@@ -242,11 +243,11 @@ func TestBroyden(t *testing.T) {
 	params := LoadConfig("testfiles/test.in").Params
 	nrg := mat.NewDense(len(geoms), 1, nil)
 	jobs := SEnergy(atoms, geoms, params, 0, None)
-	RunJobs(jobs, nrg)
+	RunJobs(jobs, nrg, 128)
 	seOld := Relative(nrg)
 	jobs = SEnergy(atoms, geoms, TESTPARAMS, 0, None)
 	nrg.Zero()
-	RunJobs(jobs, nrg)
+	RunJobs(jobs, nrg, 128)
 	seNew := Relative(nrg)
 	got := Broyden(TESTJAC, TESTSTEP, seOld, seNew)
 	r, c := TESTJAC.Dims()
