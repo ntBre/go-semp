@@ -63,7 +63,8 @@ func LogParams(w io.Writer, params []Param, iter int) {
 	WriteParams(w, params)
 }
 
-func WriteCom(w io.Writer, names []string, coords []float64, params []Param) {
+func WriteCom(w io.Writer, names []string, coords []float64, params []Param) (
+	paramfile string) {
 	f, err := os.CreateTemp("tmparam", "")
 	if err != nil {
 		panic(err)
@@ -103,6 +104,7 @@ blank line
 		Geom:   geom,
 		Name:   abs,
 	})
+	return f.Name()
 }
 
 // monotonically increasing counter for job names
@@ -128,12 +130,13 @@ func SEnergy(names []string, geoms [][]float64, params []Param, col int,
 			panic(err)
 		}
 		counter++
-		WriteCom(input, names, geom, params)
+		paramfile := WriteCom(input, names, geom, params)
 		input.Close()
 		jobs[i] = Job{
-			Filename: filepath.Base(name),
-			I:        i,
-			J:        col,
+			Filename:  filepath.Base(name),
+			ParamFile: paramfile,
+			I:         i,
+			J:         col,
 		}
 		switch calc {
 		case Fwd:
@@ -151,11 +154,12 @@ func SEnergy(names []string, geoms [][]float64, params []Param, col int,
 // chemical calculation. Filename should not include any directory
 // information.
 type Job struct {
-	Filename string
-	Jobid    string
-	I        int
-	J        int
-	Coeff    float64
+	Filename  string
+	Jobid     string
+	ParamFile string
+	I         int
+	J         int
+	Coeff     float64
 }
 
 // CentralDiff returns a list of Jobs needed to compute the ith column
@@ -341,9 +345,11 @@ type Dump struct {
 }
 
 func NewDump(size int) Dump {
+	// mop, out, arc, aux, and parameter file for a job
+	const fac int = 5
 	return Dump{
-		store: make([]string, 4*size),
-		max:   4 * size,
+		store: make([]string, fac*size),
+		max:   fac * size,
 		ptr:   0,
 	}
 }
@@ -419,6 +425,7 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 					filepath.Join("inp", job.Filename+".out"),
 					filepath.Join("inp", job.Filename+".arc"),
 					filepath.Join("inp", job.Filename+".aux"),
+					job.ParamFile,
 				)
 			} else if !qstat[job.Jobid] {
 				// delete the old job, resubmit, and
