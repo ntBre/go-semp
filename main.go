@@ -341,16 +341,13 @@ type Dump struct {
 
 func NewDump(size int) Dump {
 	return Dump{
-		store: make([]string, size),
-		max:   size,
+		store: make([]string, 4*size),
+		max:   4 * size,
 		ptr:   0,
 	}
 }
 
 func (d *Dump) dump() {
-	log.Printf("removing %d files, starting with %q\n",
-		len(d.store), d.store[0],
-	)
 	for _, f := range d.store {
 		os.Remove(f)
 	}
