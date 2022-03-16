@@ -333,11 +333,46 @@ func Filenames(jobs []Job) []string {
 	return ret
 }
 
+type Dump struct {
+	store []string
+	ptr   int
+	max   int
+}
+
+func NewDump(size int) Dump {
+	return Dump{
+		store: make([]string, size),
+		max:   size,
+		ptr:   0,
+	}
+}
+
+func (d *Dump) dump() {
+	log.Printf("removing %d files, starting with %q\n",
+		len(d.store), d.store[0],
+	)
+	for _, f := range d.store {
+		os.Remove(f)
+	}
+	d.ptr = 0
+}
+
+func (d *Dump) Add(files ...string) {
+	for _, f := range files {
+		if d.ptr == d.max-1 {
+			d.dump()
+		}
+		d.store[d.ptr] = f
+		d.ptr++
+	}
+}
+
 // RunJobs runs jobs and stores the results in target
 func RunJobs(jobs []Job, target *mat.Dense) {
 	var pbs int
 	chunkees := make([]Job, 0, CHUNK)
 	runJobs := make([]Job, 0, len(jobs))
+	heap := NewDump(CHUNK)
 	// submit the jobs in groups of size CHUNK, then store the
 	// updated jobs in runJobs
 	for j, job := range jobs {
@@ -379,6 +414,12 @@ func RunJobs(jobs []Job, target *mat.Dense) {
 				l := len(runJobs) - 1
 				runJobs[l], runJobs[i] = runJobs[i], runJobs[l]
 				runJobs = runJobs[:l]
+				heap.Add(
+					filepath.Join("inp", job.Filename+".mop"),
+					filepath.Join("inp", job.Filename+".out"),
+					filepath.Join("inp", job.Filename+".arc"),
+					filepath.Join("inp", job.Filename+".aux"),
+				)
 			} else if !qstat[job.Jobid] {
 				// delete the old job, resubmit, and
 				// default qstat to true
