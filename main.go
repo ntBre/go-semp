@@ -231,6 +231,7 @@ func Broyden(jac, step, seOld, seNew *mat.Dense) *mat.Dense {
 
 // Remove the `inp` directory and recreate it
 func cleanup() {
+	log.Println("cleaning up")
 	if err := os.RemoveAll("inp"); err != nil {
 		panic(err)
 	}
@@ -373,7 +374,7 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 	// submit the jobs in groups of size chunk, then store the updated jobs
 	// in runJobs
 
-	// TODO implement joblimit
+	// TODO use conf.JobLimit
 	for j, job := range jobs {
 		chunkees = append(chunkees, job)
 		if (j > 0 && j%chunk == 0) || j == len(jobs)-1 {
@@ -437,6 +438,8 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 			time.Sleep(1 * time.Second)
 			fmt.Fprintf(os.Stderr,
 				"%d jobs remaining\n", len(runJobs))
+		} else {
+			log.Printf("finished %d\n", shortened)
 		}
 		shortened = 0
 	}
