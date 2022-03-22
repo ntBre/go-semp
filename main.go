@@ -379,10 +379,10 @@ func RunJobs(jobs []Job, target *mat.Dense, chunk int) {
 	chunkees := make([]Job, 0, chunk)
 	runJobs := make([]Job, 0, len(jobs))
 	heap := NewDump(chunk)
-	// submit the jobs in groups of size chunk, then store the updated jobs
-	// in runJobs
-
-	// TODO use conf.JobLimit
+	// TODO use conf.JobLimit - make this a closure and call it inside the
+	// main loop to generate jobs as needed instead of all at once -
+	// actually, I need to do this higher up. the input files are already
+	// written at this point
 	for j, job := range jobs {
 		chunkees = append(chunkees, job)
 		if (j > 0 && j%chunk == 0) || j == len(jobs)-1 {
