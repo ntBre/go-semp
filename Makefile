@@ -2,7 +2,7 @@ DEST = 'woods:semp/testing/.'
 SHORT = 0
 TESTFLAGS = -v -failfast
 
-ifeq ($(SHORT),1)
+ifeq ($(SHORT),0)
 TESTFLAGS += -short
 endif
 
