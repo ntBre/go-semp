@@ -300,6 +300,7 @@ func LevMar(jac, ai, se *mat.Dense, params []Param, scale, lambda float64) (
 	magD := mat.Norm(&d, 2)
 	magG := mat.Norm(&g, 2)
 	gamma = math.Acos(gam.At(0, 0) / (magD * magG))
+	fmt.Println(d)
 	newParams = UpdateParams(params, &d, scale)
 	return
 }
