@@ -55,7 +55,12 @@ func vecDiff(got, want *mat.Dense) {
 func compMat(a, b *mat.Dense, eps float64) bool {
 	var diff mat.Dense
 	diff.Sub(a, b)
-	return mat.Norm(&diff, 2) < eps
+	norm := mat.Norm(&diff, 2)
+	if  norm < eps {
+		return true
+	}
+	fmt.Printf("norm %e > %e\n", norm, eps)
+	return false
 }
 
 func compFloat(a, b []float64, eps float64) bool {

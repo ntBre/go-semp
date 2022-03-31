@@ -110,8 +110,11 @@ func compParams(a, b []Param, eps float64) bool {
 			fmt.Printf("name: %q vs %q\n", a[i], b[i])
 			return false
 		}
-		if math.Abs(a[i].Value-b[i].Value) > eps {
-			fmt.Printf("value: %q vs %q\n", a[i], b[i])
+		if diff := math.Abs(a[i].Value - b[i].Value); diff > eps {
+			fmt.Printf(
+				"value: %q vs %q with difference %e\n",
+				a[i], b[i], diff,
+			)
 			return false
 		}
 	}
