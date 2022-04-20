@@ -28,7 +28,7 @@ def parse_anpass(filename):
                 energies.append(line.pop())
                 for i, disp in enumerate(line):
                     if disp != 0.0:
-                        print("%5d%18.8f" % (i, disp))
+                        print("%5d%18.8f" % (i + 1, disp))
                 print("    0")
                 count += 1
 
